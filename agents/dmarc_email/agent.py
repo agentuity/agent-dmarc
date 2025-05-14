@@ -3,7 +3,6 @@ from agentuity import AgentRequest, AgentResponse, AgentContext
 
 client = AsyncOpenAI()
 
-
 async def run(request: AgentRequest, response: AgentResponse, context: AgentContext):
     chat_completion = await client.chat.completions.create(
         messages=[
