@@ -176,3 +176,7 @@ cython_debug/
 # Agentuity
 .agentuity
 .agentuity-crash-*.json
+
+# Google OAUTH
+credentials.json
+token.json
