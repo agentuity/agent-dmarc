@@ -5,7 +5,7 @@
 - [x] Download and save email attachments
 
 ## 2. DMARC Report Parsing
-- [ ] Implement logic to identify and extract DMARC report files from email attachments
+- [x] Implement logic to identify and extract DMARC report files from email attachments
 - [ ] Parse DMARC XML files to extract relevant data (e.g., domain, pass/fail, source IP, etc.)
 - [ ] Handle different DMARC report formats (aggregate, forensic, etc.)
 
