@@ -1,6 +1,6 @@
 from openai import AsyncOpenAI
 from agentuity import AgentRequest, AgentResponse, AgentContext
-from utils.gmail import fetch_emails, get_dmarc_attachment_content, authenticate_gmail, mark_as_read
+from utils.gmail import fetch_unread_emails, get_dmarc_attachment_content, authenticate_gmail, mark_as_read
 from resources.templates import templates
 from utils.slack import send_message
 from utils.parser import parse_and_format_xml
@@ -15,7 +15,7 @@ async def run(request: AgentRequest, response: AgentResponse, context: AgentCont
 
 async def generate_dmarc_report(context: AgentContext):
     service = authenticate_gmail()
-    emails = fetch_emails(service)
+    emails = fetch_unread_emails(service)
     
     dmarc_reports = {}
     
@@ -72,6 +72,7 @@ async def analyze_dmarc_and_slack_result(dmarc_reports):
     "Analyze the DMARC reports for each email and send the results to Slack"
     for email_id, email_value in dmarc_reports.items():
         contents = email_value['dmarc_contents']
+        email = email_value['email']
         all_analyses = []
         for xml_content in contents:
             try:
@@ -82,7 +83,7 @@ async def analyze_dmarc_and_slack_result(dmarc_reports):
             except Exception as e:
                 print(f"Error analyzing DMARC report: {e}")
                 continue
-        summary = await summarize_analysis(all_analyses)
+        summary = await summarize_analysis(all_analyses, email)
         slack_dmarc_analysis(summary)
     return all_analyses
 
@@ -104,12 +105,12 @@ async def analyze_dmarc_report(dmarc_report):
     )
     return response.choices[0].message.content
 
-async def summarize_analysis(results):
+async def summarize_analysis(results, email):
     """
     Summarize multiple DMARC analysis results into one concise report
     """
     template = templates["summarize-analysis"]
-    compiled_prompt = template.substitute(analysis=results)
+    compiled_prompt = template.substitute(analysis=results, email=email)
     response = await client.chat.completions.create(
         model="gpt-4o",
         messages=[

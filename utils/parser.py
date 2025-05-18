@@ -62,7 +62,7 @@ def parse_and_format_xml(xml_string):
     return format_structure(parsed)
 
 def main():
-    folder_path = "resources/examples"  # your path to the XML files
+    folder_path = "resources/examples" 
     all_reports = parse_and_format_all(folder_path)
 
     with open("dmarc_ai_input.json", "w", encoding="utf-8") as f:

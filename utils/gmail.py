@@ -36,10 +36,29 @@ def mark_as_read(service, message_id):
     except Exception as error:
         print(f'Error marking message {message_id} as read: {error}')
 
-def fetch_emails(service, labelIds=['INBOX', 'UNREAD']):
+def fetch_unread_emails(service, labelIds=['INBOX', 'UNREAD']):
     results = service.users().messages().list(userId='me', labelIds=labelIds, q="has:attachment is:unread").execute()
     messages = results.get('messages', [])
-    return messages
+    
+    if not messages:
+        return []
+    
+    detailed_messages = []
+    for message in messages:
+        msg = service.users().messages().get(userId='me', id=message['id'], format='metadata', 
+                                            metadataHeaders=['From', 'Subject', 'Date']).execute()
+        headers = msg['payload']['headers']
+        email_data = {
+            'id': message['id'],
+            'threadId': message['threadId'],
+            'subject': next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject'),
+            'from': next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown Sender'),
+            'date': next((h['value'] for h in headers if h['name'] == 'Date'), 'Unknown Date')
+        }
+        detailed_messages.append(email_data)
+    
+    print(detailed_messages)
+    return detailed_messages
 
 def get_dmarc_attachment_content(service, message_id):
     """
@@ -98,7 +117,7 @@ def get_dmarc_attachment_content(service, message_id):
 def main():
     try:
         service = authenticate_gmail()
-        messages = fetch_emails(service)
+        messages = fetch_unread_emails(service)
         if not messages:
             print('No messages with attachments found.')
             return
