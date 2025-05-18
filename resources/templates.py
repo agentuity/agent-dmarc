@@ -6,6 +6,12 @@ Given a DMARC aggregate report in JSON format, analyze it and produce a JSON-str
 The goal is to provide a concise analysis of the report -- specifically spot problems that are included
 in the report.
 
+If the report is empty, or is not a DMARC report, return an empty JSON object with the following structure:
+
+{
+    "status": "empty" | "not_dmarc_report"
+}
+
 Return ONLY valid JSON in this exact format:
 
 {
