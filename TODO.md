@@ -14,6 +14,6 @@
 
 ## 4. Support Slack Queries
 - [ ] Allow Slack to ping the agent and answer questions accordingly
-- [ ] Multi-action agent -- depending the user queries
+- [ ] Multi-action agent -- depending on user queries
 
 ---
