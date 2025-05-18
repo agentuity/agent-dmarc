@@ -4,7 +4,15 @@ import parsedmarc
 import json
 
 def parse_dmarc_xml(file_path):
-    """Parse a single DMARC XML file from disk and return structured data."""
+    """
+    Parses a DMARC XML file from the specified path and returns the parsed data.
+    
+    Args:
+        file_path: Path to the DMARC XML file.
+    
+    Returns:
+        The parsed DMARC report data as returned by parsedmarc, or None if parsing fails.
+    """
     try:
         parsed = parsedmarc.parse_report_file(file_path)
         return parsed
@@ -13,7 +21,16 @@ def parse_dmarc_xml(file_path):
         return None
 
 def format_structure(parsed):
-    """Format parsedmarc output into a structure suitable for AI input."""
+    """
+    Transforms parsed DMARC report data into a structured dictionary for AI processing.
+    
+    Args:
+        parsed: The parsed DMARC report data as returned by parsedmarc.
+    
+    Returns:
+        A dictionary containing report metadata, published policy, and a list of
+        formatted records with key DMARC fields extracted for each record.
+    """
     report_data = parsed.get('report', {})
     
     formatted_records = []
@@ -48,7 +65,17 @@ def format_structure(parsed):
     }
 
 def parse_and_format_all(folder_path):
-    """Parse and format all XML files in the given folder."""
+    """
+    Parses and formats all DMARC XML files in a specified folder.
+    
+    Iterates through each `.xml` file in the given folder, parses the DMARC report, formats the parsed data, and returns a list of formatted report structures.
+    
+    Args:
+        folder_path: Path to the folder containing DMARC XML files.
+    
+    Returns:
+        A list of dictionaries, each representing a formatted DMARC report.
+    """
     all_formatted = []
     for xml_file in glob.glob(os.path.join(folder_path, "*.xml")):
         parsed = parse_dmarc_xml(xml_file)
@@ -58,10 +85,24 @@ def parse_and_format_all(folder_path):
     return all_formatted
 
 def parse_and_format_xml(xml_string):
+    """
+    Parses a DMARC XML string and returns a structured summary.
+    
+    Args:
+        xml_string: The DMARC XML content as a string.
+    
+    Returns:
+        A dictionary containing formatted report metadata, published policy, and records.
+    """
     parsed = parsedmarc.parse_report_file(xml_string)
     return format_structure(parsed)
 
 def main():
+    """
+    Processes all DMARC XML files in the 'resources/examples' folder and writes the formatted results to 'dmarc_ai_input.json'.
+    
+    Iterates through each XML file in the specified folder, parses and formats the DMARC reports, and saves the aggregated output as a JSON file. Prints a confirmation message upon successful completion.
+    """
     folder_path = "resources/examples" 
     all_reports = parse_and_format_all(folder_path)
 
