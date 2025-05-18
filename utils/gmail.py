@@ -12,6 +12,11 @@ import io
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.modify']
 
 def authenticate_gmail():
+    """
+    Authenticates and returns an authorized Gmail API service object.
+    
+    Checks for existing OAuth2 credentials in 'token.json', refreshes them if expired, or initiates a new authentication flow if necessary. Saves updated credentials for future use.
+    """
     creds = None
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
@@ -26,7 +31,12 @@ def authenticate_gmail():
     return build('gmail', 'v1', credentials=creds)
 
 def mark_as_read(service, message_id):
-    """Mark a message as read by removing the UNREAD label."""
+    """
+    Marks a Gmail message as read by removing the 'UNREAD' label.
+    
+    Args:
+        message_id: The unique identifier of the Gmail message to update.
+    """
     try:
         service.users().messages().modify(
             userId='me',
@@ -37,6 +47,12 @@ def mark_as_read(service, message_id):
         print(f'Error marking message {message_id} as read: {error}')
 
 def get_unread_dmarc_emails(service, labelIds=['INBOX']):
+    """
+    Retrieves unread emails with attachments from specified Gmail labels.
+    
+    Fetches metadata for each matching email, including sender, subject, and date.
+    Returns a list of dictionaries containing message ID, thread ID, and header details.
+    """
     results = service.users().messages().list(userId='me', labelIds=labelIds, q="has:attachment is:unread").execute()
     messages = results.get('messages', [])
     
@@ -60,13 +76,13 @@ def get_unread_dmarc_emails(service, labelIds=['INBOX']):
 
 def format_email_info(email_data):
     """
-    Format email header information for better display in logs and notifications.
+    Returns a formatted string displaying email metadata for logging or notifications.
     
     Args:
-        email_data (dict): Dictionary containing email metadata (id, from, subject, date)
-        
+        email_data (dict): Dictionary with keys 'id', 'from', 'subject', and 'date'.
+    
     Returns:
-        str: Formatted string with email header information
+        str: Multi-line string summarizing the email's ID, sender, subject, and date.
     """
     return (
         f"📧 Email Details:\n"
@@ -78,9 +94,9 @@ def format_email_info(email_data):
 
 def get_dmarc_attachment_content(service, message_id):
     """
-    Retrieve DMARC report content from email attachments.
-    Returns a list of XML contents from all valid attachments found.
-    Handles .xml, .zip, and .gz files containing DMARC reports.
+    Extracts DMARC report XML contents from email attachments.
+    
+    Retrieves and processes attachments with .xml, .zip, or .gz extensions from the specified email. Returns a list of XML content bytes extracted from all valid attachments, or None if no valid DMARC reports are found.
     """
     msg = service.users().messages().get(userId='me', id=message_id).execute()
     payload = msg.get('payload', {})
@@ -131,6 +147,11 @@ def get_dmarc_attachment_content(service, message_id):
 
 
 def main():
+    """
+    Authenticates with Gmail, retrieves unread emails with attachments, and extracts DMARC reports.
+    
+    Fetches unread emails containing attachments, displays their metadata, and attempts to extract DMARC report contents from their attachments. Prints the results and handles errors during execution.
+    """
     try:
         service = authenticate_gmail()
         messages = get_unread_dmarc_emails(service)
