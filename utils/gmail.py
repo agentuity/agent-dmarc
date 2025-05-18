@@ -36,7 +36,7 @@ def mark_as_read(service, message_id):
     except Exception as error:
         print(f'Error marking message {message_id} as read: {error}')
 
-def fetch_unread_emails(service, labelIds=['INBOX', 'UNREAD']):
+def get_unread_dmarc_emails(service, labelIds=['INBOX']):
     results = service.users().messages().list(userId='me', labelIds=labelIds, q="has:attachment is:unread").execute()
     messages = results.get('messages', [])
     
@@ -56,9 +56,25 @@ def fetch_unread_emails(service, labelIds=['INBOX', 'UNREAD']):
             'date': next((h['value'] for h in headers if h['name'] == 'Date'), 'Unknown Date')
         }
         detailed_messages.append(email_data)
-    
-    print(detailed_messages)
     return detailed_messages
+
+def format_email_info(email_data):
+    """
+    Format email header information for better display in logs and notifications.
+    
+    Args:
+        email_data (dict): Dictionary containing email metadata (id, from, subject, date)
+        
+    Returns:
+        str: Formatted string with email header information
+    """
+    return (
+        f"📧 Email Details:\n"
+        f"  ID: {email_data['id']}\n"
+        f"  From: {email_data['from']}\n"
+        f"  Subject: {email_data['subject']}\n"
+        f"  Date: {email_data['date']}"
+    )
 
 def get_dmarc_attachment_content(service, message_id):
     """
@@ -117,13 +133,19 @@ def get_dmarc_attachment_content(service, message_id):
 def main():
     try:
         service = authenticate_gmail()
-        messages = fetch_unread_emails(service)
+        messages = get_unread_dmarc_emails(service)
         if not messages:
-            print('No messages with attachments found.')
+            print('No unread emails with attachments found.')
             return
-        for message in messages:
-            content = get_dmarc_attachment_content(service, message['id'])
-            print(content)
+        
+        print(f"Found {len(messages)} unread emails with attachments:")
+        for email in messages:
+            print("\n" + format_email_info(email))
+            content = get_dmarc_attachment_content(service, email['id'])
+            if content:
+                print(f"✅ Contains DMARC report: {len(content)} attachment(s) found")
+            else:
+                print("❌ No DMARC report found in attachments")
     except Exception as error:
         print(f'An error occurred: {error}')
 

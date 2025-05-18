@@ -1,6 +1,6 @@
 from openai import AsyncOpenAI
 from agentuity import AgentRequest, AgentResponse, AgentContext
-from utils.gmail import fetch_unread_emails, get_dmarc_attachment_content, authenticate_gmail, mark_as_read
+from utils.gmail import get_unread_dmarc_emails, get_dmarc_attachment_content, authenticate_gmail, mark_as_read, format_email_info
 from resources.templates import templates
 from utils.slack import send_message
 from utils.parser import parse_and_format_xml
@@ -10,19 +10,20 @@ client = AsyncOpenAI()
 
 async def run(request: AgentRequest, response: AgentResponse, context: AgentContext):
     analysis = await generate_dmarc_report(context)
-    summary = f"Total DMARC reports analyzed: {len(analysis)}"
+    summary = f"DMARC analysis complete: {analysis}"
     return response.text(summary)
 
 async def generate_dmarc_report(context: AgentContext):
     service = authenticate_gmail()
-    emails = fetch_unread_emails(service)
+    emails = get_unread_dmarc_emails(service)
     
     dmarc_reports = {}
-    
+    emails_without_dmarc = {}
     for email in emails:
         contents = get_dmarc_attachment_content(service, email['id'])
         if not contents:
             context.logger.error(f"No DMARC report found for email {email['id']}")
+            emails_without_dmarc[email['id']] = email
             continue
         email_value = {
             'email': email,
@@ -33,6 +34,11 @@ async def generate_dmarc_report(context: AgentContext):
         return "No DMARC reports found"
     
     context.logger.info(f"Found {len(dmarc_reports)} DMARC reports to analyze")
+    
+    for email_id, email_data in emails_without_dmarc.items():
+        formatted_email_info = format_email_info(email_data)
+        context.logger.info(f"No DMARC report found for:\n{formatted_email_info}")
+        slack_to_dmarc_channel(f"❌ No DMARC report found in the following email:\n{formatted_email_info}")
     
     results = await analyze_dmarc_and_slack_result(dmarc_reports)
     await post_process_dmarc_emails(service, dmarc_reports, results, context)
@@ -62,7 +68,7 @@ async def post_process_dmarc_emails(service, dmarc_reports, analyses, context):
             # await store_dmarc_report(dmarc_reports[email_id], analyses, context)
             
             # After successful storage, mark email as read
-            # mark_as_read(service, email_id)
+            mark_as_read(service, email_id)
             context.logger.info(f"Successfully processed and marked email {email_id} as read")
         except Exception as e:
             context.logger.error(f"Error processing email {email_id}: {e}")
@@ -84,10 +90,10 @@ async def analyze_dmarc_and_slack_result(dmarc_reports):
                 print(f"Error analyzing DMARC report: {e}")
                 continue
         summary = await summarize_analysis(all_analyses, email)
-        slack_dmarc_analysis(summary)
+        slack_to_dmarc_channel(summary)
     return all_analyses
 
-def slack_dmarc_analysis(analysis):
+def slack_to_dmarc_channel(analysis):
     "Send the DMARC analysis to Slack"
     slack_channel = os.getenv("DMARC_CHANNEL_ID")
     # Turn this on once its done testing
