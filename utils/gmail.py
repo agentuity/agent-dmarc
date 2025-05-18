@@ -25,25 +25,41 @@ def authenticate_gmail():
             token.write(creds.to_json())
     return build('gmail', 'v1', credentials=creds)
 
-def fetch_emails(service, labelIds=['INBOX']):
-    results = service.users().messages().list(userId='me', labelIds=labelIds, q="has:attachment").execute()
+def mark_as_read(service, message_id):
+    """Mark a message as read by removing the UNREAD label."""
+    try:
+        service.users().messages().modify(
+            userId='me',
+            id=message_id,
+            body={'removeLabelIds': ['UNREAD']}
+        ).execute()
+    except Exception as error:
+        print(f'Error marking message {message_id} as read: {error}')
+
+def fetch_emails(service, labelIds=['INBOX', 'UNREAD']):
+    results = service.users().messages().list(userId='me', labelIds=labelIds, q="has:attachment is:unread").execute()
     messages = results.get('messages', [])
     return messages
 
 def get_dmarc_attachment_content(service, message_id):
+    """
+    Retrieve DMARC report content from email attachments.
+    Returns a list of XML contents from all valid attachments found.
+    Handles .xml, .zip, and .gz files containing DMARC reports.
+    """
     msg = service.users().messages().get(userId='me', id=message_id).execute()
     payload = msg.get('payload', {})
     parts = payload.get('parts', [])
+    
+    xml_contents = []
     
     for part in parts: 
         filename = part.get('filename', '')
         body = part.get('body', {})
         
-        # Check if it's a DMARC report (zip or gzip)
-        if not (filename.endswith('.zip') or filename.endswith('.gz')):
+        if not (filename.endswith('.xml') or filename.endswith('.zip') or filename.endswith('.gz')):
             continue
             
-        # Get attachment data
         attachment_id = body.get('attachmentId')
         if attachment_id:
             attachment = service.users().messages().attachments().get(
@@ -56,25 +72,27 @@ def get_dmarc_attachment_content(service, message_id):
         if not data:
             continue
             
-        # Decode base64 data
         file_data = base64.urlsafe_b64decode(data.encode('UTF-8'))
         
-        # Handle based on file type
         try:
-            if filename.endswith('.zip'):
+            if filename.endswith('.xml'):
+                xml_contents.append(file_data)
+                
+            elif filename.endswith('.zip'):
                 with zipfile.ZipFile(io.BytesIO(file_data)) as zip_file:
-                    # Get the first XML file in the zip
                     xml_files = [f for f in zip_file.namelist() if f.endswith('.xml')]
-                    if xml_files:
-                        return zip_file.read(xml_files[0])
+                    for xml_file in xml_files:
+                        xml_content = zip_file.read(xml_file)
+                        xml_contents.append(xml_content)
                         
             elif filename.endswith('.gz'):
-                return gzip.decompress(file_data)
+                xml_content = gzip.decompress(file_data)
+                xml_contents.append(xml_content)
                 
         except (zipfile.BadZipFile, gzip.BadGzipFile) as e:
-            continue  # Skip corrupted archives
+            continue
             
-    return None
+    return xml_contents if xml_contents else None
 
 
 def main():

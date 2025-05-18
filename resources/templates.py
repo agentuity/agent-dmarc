@@ -1,30 +1,74 @@
-templates = {
-    "analyze-dmarc": """You are an expert in email authentication and DMARC analysis.
+from string import Template
 
-Given a DMARC aggregate report in XML format, analyze it and generate a summary report:
+analyze_dmarc_template = '''You are an expert in email authentication and DMARC analysis.
 
-1. If **any message fails** DMARC (due to SPF or DKIM failure, or misalignment with the header `From` domain):
-   - Highlight the issues clearly
-   - List offending IPs, failing authentication methods, and whether alignment failed
-   - Suggest possible remediation steps (e.g., updating SPF/DKIM records, fixing alignment, etc.)
+Given a DMARC aggregate report in JSON format, analyze it and produce a JSON-structured summary.
+The goal is to provide a concise analysis of the report -- specifically spot problems that are included
+in the report.
 
-2. If **no issues are found**, generate a **short, simple summary** confirming all messages passed DMARC with proper alignment.
+Return ONLY valid JSON in this exact format:
 
-Use bullet points or clear formatting for readability.
-
-Use green tick emoji for passing and red X emoji for failing as visual indicator.
+{
+    "summary": {
+        "total_messages": number,
+        "passing_messages": number,
+        "failing_messages": number,
+        "failure_details": string[],
+        "other_issues": string[]
+    },
+    "failures": {
+        "ips": [
+            {
+                "ip": string,
+                "count": number,
+                "spf_status": "pass" | "fail" | "neutral",
+                "dkim_status": "pass" | "fail" | "neutral",
+                "alignment": {
+                    "dkim_aligned": boolean,
+                    "spf_aligned": boolean
+                },
+                "from_domain": string
+            }
+        ]
+    },
+    "remediation": {
+        "suggestions": string[],
+        "priority": "low" | "medium" | "high"
+    },
+    "conclusion": {
+        "status": "satisfactory" | "needs_attention" | "critical",
+        "message": string
+    }
+}
 
 Here is the DMARC report:
 
-{xml}
-""",
-    "summarize-analysis": """
-    You are a concise and accurate summarizer.
+$xml
+'''
 
-    You are given a list of DMARC analysis results.
+summarize_analysis_template = '''You are a concise and accurate summarizer.
 
-    Your job is to summarize the DMARC analysis results in a concise manner.
+You will be given 1 or more DMARC analysis reports. Return ONLY valid JSON in this exact format:
 
-    {analysis}
-    """
+{
+    "analysis_summary": {
+        "total_reports": number,
+        "reports_with_issues": number,
+        "failure_details": string[],
+        "health_status": "good" | "needs_attention" | "critical",
+        "timestamp": string  // ISO-8601 format
+    },
+    "metrics": {
+        "success_rate": number,  // 0-1 ratio
+        "health_score": number   // 0-100 score
+    }
+}
+
+Raw Analysis:
+$analysis
+'''
+
+templates = {
+    "analyze-dmarc": Template(analyze_dmarc_template),
+    "summarize-analysis": Template(summarize_analysis_template)
 }
