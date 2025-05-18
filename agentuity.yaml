@@ -57,8 +57,6 @@ bundler:
 # The agents that are part of this project
 agents:
   - # The ID of the Agent which is automatically generated
-    id: dmarc-email
+    id: agent_d0a9fd225ccef6daea043069e0441235
     # The name of the Agent which is editable
-    name: dmarc-email
-    # The description of the Agent which is editable
-    description: An agent that retrieves emails and pull XML DMARC attachments.
+    name: dmarc_email

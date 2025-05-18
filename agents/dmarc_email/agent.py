@@ -7,7 +7,6 @@ from utils.parser import parse_and_format_xml
 import os
 
 client = AsyncOpenAI()
-
 KV_NAME = "dmarc-reports"
 
 async def run(request: AgentRequest, response: AgentResponse, context: AgentContext):
@@ -42,7 +41,7 @@ async def generate_dmarc_report(context: AgentContext):
         context.logger.info(f"No DMARC report found for:\n{formatted_email_info}")
         slack_to_dmarc_channel(f"❌ No DMARC report found in the following email:\n{formatted_email_info}")
     
-    results = await analyze_dmarc_and_slack_result(dmarc_reports)
+    results = await analyze_dmarc_and_slack_result(dmarc_reports, context)
     await post_process_dmarc_emails(service, results, context)
     return results
 
@@ -69,10 +68,13 @@ async def post_process_dmarc_emails(service, analyses, context: AgentContext):
             mark_as_read(service, email_id)
             context.logger.info(f"Successfully processed and marked email {email_id} as read")
         except Exception as e:
-            context.logger.error(f"Error processing email {email_id}: {e}")
+            context.logger.error(
+                f"Error processing email {email_id}: {e}",
+                stack_info=True
+            )
             continue
 
-async def analyze_dmarc_and_slack_result(dmarc_reports):
+async def analyze_dmarc_and_slack_result(dmarc_reports, context: AgentContext):
     "Analyze the DMARC reports for each email and send the results to Slack"
     results = {}
     for email_id, email_value in dmarc_reports.items():
@@ -86,7 +88,7 @@ async def analyze_dmarc_and_slack_result(dmarc_reports):
                     analysis = await analyze_dmarc_report(formatted_report)
                     all_analyses.append(analysis)
             except Exception as e:
-                print(f"Error analyzing DMARC report: {e}")
+                context.logger.error(f"Error analyzing DMARC report: {e}", stack_info=True)
                 continue
         summary = await summarize_analysis(all_analyses, email)
         slack_to_dmarc_channel(summary)
@@ -96,10 +98,7 @@ async def analyze_dmarc_and_slack_result(dmarc_reports):
 def slack_to_dmarc_channel(analysis):
     "Send the DMARC analysis to Slack"
     slack_channel = os.getenv("DMARC_CHANNEL_ID")
-    # Turn this on once its done testing
-    # send_message(slack_channel, analysis)
-    print("Yo Slack, I'm sending you a DMARC analysis")
-    print(analysis)
+    send_message(slack_channel, analysis)
     
 async def analyze_dmarc_report(dmarc_report):
     "Analyze a single DMARC report"
