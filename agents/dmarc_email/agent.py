@@ -8,6 +8,8 @@ import os
 
 client = AsyncOpenAI()
 
+KV_NAME = "dmarc-reports"
+
 async def run(request: AgentRequest, response: AgentResponse, context: AgentContext):
     analysis = await generate_dmarc_report(context)
     summary = f"DMARC analysis complete: {analysis}"
@@ -41,10 +43,10 @@ async def generate_dmarc_report(context: AgentContext):
         slack_to_dmarc_channel(f"❌ No DMARC report found in the following email:\n{formatted_email_info}")
     
     results = await analyze_dmarc_and_slack_result(dmarc_reports)
-    await post_process_dmarc_emails(service, dmarc_reports, results, context)
+    await post_process_dmarc_emails(service, results, context)
     return results
 
-async def post_process_dmarc_emails(service, dmarc_reports, analyses, context):
+async def post_process_dmarc_emails(service, analyses, context: AgentContext):
     """
     Post-process DMARC report emails after analysis:
     1. Store DMARC reports and their analyses in the database
@@ -61,13 +63,9 @@ async def post_process_dmarc_emails(service, dmarc_reports, analyses, context):
         - Each email is marked as read only after successful database storage
         - Errors during processing are logged but don't stop the processing of other emails
     """
-    for email_id in dmarc_reports:
+    for email_id in analyses:
         try:
-            # TODO: Implement database storage logic here
-            # Store both the DMARC report and its analysis
-            # await store_dmarc_report(dmarc_reports[email_id], analyses, context)
-            
-            # After successful storage, mark email as read
+            await context.kv.set(KV_NAME, f"email-id-{email_id}", analyses[email_id])
             mark_as_read(service, email_id)
             context.logger.info(f"Successfully processed and marked email {email_id} as read")
         except Exception as e:
@@ -76,6 +74,7 @@ async def post_process_dmarc_emails(service, dmarc_reports, analyses, context):
 
 async def analyze_dmarc_and_slack_result(dmarc_reports):
     "Analyze the DMARC reports for each email and send the results to Slack"
+    results = {}
     for email_id, email_value in dmarc_reports.items():
         contents = email_value['dmarc_contents']
         email = email_value['email']
@@ -91,7 +90,8 @@ async def analyze_dmarc_and_slack_result(dmarc_reports):
                 continue
         summary = await summarize_analysis(all_analyses, email)
         slack_to_dmarc_channel(summary)
-    return all_analyses
+        results[email_id] = summary
+    return results
 
 def slack_to_dmarc_channel(analysis):
     "Send the DMARC analysis to Slack"
