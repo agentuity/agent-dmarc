@@ -60,3 +60,5 @@ agents:
     id: agent_d0a9fd225ccef6daea043069e0441235
     # The name of the Agent which is editable
     name: dmarc_email
+    # The description of the Agent which is editable
+    description: This agent processes DMARC email reports and extracts actionable insights.
