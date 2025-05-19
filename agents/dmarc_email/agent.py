@@ -1,10 +1,16 @@
-from openai import AsyncOpenAI
-from agentuity import AgentRequest, AgentResponse, AgentContext
-from utils.gmail import get_unread_dmarc_emails, get_dmarc_attachment_content, authenticate_gmail, mark_as_read, format_email_info
-from resources.templates import templates
-from utils.slack import send_message
-from utils.parser import parse_and_format_xml
 import os
+from agentuity import AgentRequest, AgentResponse, AgentContext
+from openai import AsyncOpenAI
+from resources.templates import templates
+from utils.gmail import (
+	authenticate_gmail,
+	format_email_info,
+	get_dmarc_attachment_content,
+	get_unread_dmarc_emails,
+	mark_as_read
+)
+from utils.parser import parse_and_format_xml
+from utils.slack import send_message
 
 client = AsyncOpenAI()
 KV_NAME = "dmarc-reports"
