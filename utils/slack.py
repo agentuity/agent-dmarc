@@ -5,6 +5,13 @@ import os
 client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
 
 def send_message(channel_id, message_text):
+    """
+    Sends a message to a specified Slack channel using the Slack Web API.
+    
+    Args:
+    	channel_id: The ID of the Slack channel to send the message to.
+    	message_text: The text content of the message to send.
+    """
     try:
         response = client.chat_postMessage(
             channel=channel_id,
