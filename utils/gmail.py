@@ -9,13 +9,16 @@ import tempfile
 import zipfile
 import gzip
 import io
+import logging
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.modify']
 
 def get_credentials_file_from_env():
+    if os.path.exists("credentials.json"):
+        return "credentials.json"
     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
     if not creds_json:
-        raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set")
+        raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set and credentials.json not found")
     with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.json') as tmp:
         tmp.write(creds_json)
         return tmp.name
@@ -25,19 +28,51 @@ def authenticate_gmail():
     Authenticates and returns an authorized Gmail API service object.
     
     Checks for existing OAuth2 credentials in 'token.json', refreshes them if expired, or initiates a new authentication flow if necessary. Saves updated credentials for future use.
+    Logs and raises clear errors if authentication fails or credentials file is not found.
+    If 'token.json' does not exist, checks for GOOGLE_AUTH_TOKEN environment variable and uses its contents.
     """
     creds = None
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+    logger = logging.getLogger("gmail_auth")
+    try:
+        token_path = 'token.json'
+        if os.path.exists(token_path):
+            creds = Credentials.from_authorized_user_file(token_path, SCOPES)
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(get_credentials_file_from_env(), SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
-    return build('gmail', 'v1', credentials=creds)
+            google_auth_token = os.environ.get('GOOGLE_AUTH_TOKEN')
+            if google_auth_token:
+                with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.json') as tmp_token:
+                    tmp_token.write(google_auth_token)
+                    tmp_token_path = tmp_token.name
+                creds = Credentials.from_authorized_user_file(tmp_token_path, SCOPES)
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                except Exception as e:
+                    logger.error(f"Failed to refresh credentials: {e}")
+                    raise RuntimeError(f"Failed to refresh credentials: {e}")
+            else:
+                try:
+                    credentials_path = get_credentials_file_from_env()
+                except Exception as e:
+                    logger.error(f"Credentials file not found or invalid: {e}")
+                    raise FileNotFoundError(f"Credentials file not found or invalid: {e}")
+                try:
+                    flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
+                    creds = flow.run_local_server(port=0)
+                except Exception as e:
+                    logger.error(f"Failed to authenticate with Gmail: {e}")
+                    raise RuntimeError(f"Failed to authenticate with Gmail: {e}")
+            try:
+                with open(token_path, 'w') as token:
+                    token.write(creds.to_json())
+            except Exception as e:
+                logger.error(f"Failed to save token.json: {e}")
+                raise IOError(f"Failed to save token.json: {e}")
+        return build('gmail', 'v1', credentials=creds)
+    except Exception as error:
+        logger.error(f"Gmail authentication failed: {error}")
+        raise
 
 def mark_as_read(service, message_id):
     """

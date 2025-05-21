@@ -96,6 +96,37 @@ For sensitive information, use secrets:
 agentuity env set --secret KEY=VALUE
 ```
 
+## 🚀 Production Deployment
+
+To deploy this agent in a production environment (non-interactive, headless, or cloud):
+
+### 1. Generate Gmail OAuth Token Locally
+- Run the agent locally and complete the OAuth browser flow. This will generate a `token.json` file containing your refresh token.
+- You should already have your `credentials.json` from the Google Cloud Console.
+
+### 2. Set Required Environment Variables
+Set the following environment variables in your production environment (e.g., in your `.env` file, secret manager, or deployment config):
+
+```
+GOOGLE_AUTH_TOKEN=<contents of your token.json>
+SLACK_BOT_TOKEN=<your Slack bot token>
+DMARC_CHANNEL_ID=<your Slack channel ID>
+AGENTUITY_SDK_KEY=<your Agentuity SDK key>
+```
+
+- To get the value for `GOOGLE_AUTH_TOKEN`, open your `token.json` and copy its entire contents (including braces `{}`) as a single line or valid JSON string.
+- (Optional) If you want to avoid using a `credentials.json` file, you can also store its contents in an environment variable (e.g., `GOOGLE_CREDENTIALS_JSON`) and update your code to use it.
+
+### 3. Deploy Your Code
+- Deploy your codebase to your production server or cloud environment.
+- Ensure your environment variables are set and accessible to your app.
+
+### 4. Run Your App
+- Start your app using your preferred method (e.g., `uv run server.py`, `agentuity deploy`, or your cloud provider's process).
+- Monitor logs for any authentication or environment variable errors.
+
+**Note:** You do NOT need to run the OAuth browser flow in production. As long as your `GOOGLE_AUTH_TOKEN` is valid and contains a refresh token, your app will authenticate and refresh tokens automatically.
+
 ## 📖 Documentation
 
 For comprehensive documentation on the Agentuity Python SDK, visit:

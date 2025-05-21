@@ -21,9 +21,10 @@ async def run(request: AgentRequest, response: AgentResponse, context: AgentCont
     
     Triggers the DMARC report generation and analysis workflow using the provided agent context, then returns a summary message as a text response.
     """
+    context.logger.info("Running DMARC report generation and analysis workflow")
     analysis = await generate_dmarc_report(context)
     summary = f"DMARC analysis complete: {analysis}"
-    return response.text(summary)
+    return response.json({"summary": summary})
 
 async def generate_dmarc_report(context: AgentContext):
     """
@@ -33,7 +34,7 @@ async def generate_dmarc_report(context: AgentContext):
     """
     service = authenticate_gmail()
     emails = get_unread_dmarc_emails(service)
-    
+    context.logger.info(f"Found {len(emails)} unread DMARC-related emails")
     dmarc_reports = {}
     emails_without_dmarc = {}
     for email in emails:

@@ -1,6 +1,7 @@
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 import os
+import logging
 
 client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
 
@@ -17,9 +18,10 @@ def send_message(channel_id, message_text):
             channel=channel_id,
             text=message_text
         )
-        print(f"✅ Message sent to {channel_id}: {response['ts']}")
+        logging.info(f"✅ Message sent to {channel_id}: {response['ts']}")
     except SlackApiError as e:
-        print(f"❌ Error sending message: {e.response['error']}")
+        logging.error(f"❌ Error sending message: {e.response['error']}")
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     send_message("C08T4A9S3BK", "👋 Hello from DMARC Agent!")
