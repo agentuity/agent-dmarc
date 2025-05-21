@@ -44,6 +44,8 @@ def authenticate_gmail():
                     tmp_token.write(google_auth_token)
                     tmp_token_path = tmp_token.name
                 creds = Credentials.from_authorized_user_file(tmp_token_path, SCOPES)
+            else:
+                logger.error("GOOGLE_AUTH_TOKEN environment variable not set and token.json not found")
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 try:
@@ -71,7 +73,7 @@ def authenticate_gmail():
                 raise IOError(f"Failed to save token.json: {e}")
         return build('gmail', 'v1', credentials=creds)
     except Exception as error:
-        logger.error(f"Gmail authentication failed: {error}")
+        logger.error(f"Gmail authentication failed: {error}", exc_info=True, stack_info=True)
         raise
 
 def mark_as_read(service, message_id):
