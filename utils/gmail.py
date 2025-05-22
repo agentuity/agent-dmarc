@@ -26,10 +26,6 @@ def get_credentials_file_from_env():
 def authenticate_gmail():
     """
     Authenticates and returns an authorized Gmail API service object.
-    
-    Checks for existing OAuth2 credentials in 'token.json', refreshes them if expired, or initiates a new authentication flow if necessary. Saves updated credentials for future use.
-    Logs and raises clear errors if authentication fails or credentials file is not found.
-    If 'token.json' does not exist, checks for GOOGLE_AUTH_TOKEN environment variable and uses its contents.
     """
     creds = None
     logger = logging.getLogger("gmail_auth")
@@ -96,9 +92,6 @@ def mark_as_read(service, message_id):
 def get_unread_dmarc_emails(service, labelIds=None):
     """
     Retrieves unread emails with attachments from specified Gmail labels, handling pagination.
-
-    Fetches metadata for each matching email, including sender, subject, and date.
-    Returns a list of dictionaries containing message ID, thread ID, and header details.
     """
     if labelIds is None:
         labelIds = ['INBOX']
@@ -149,8 +142,6 @@ def format_email_info(email_data):
 def get_dmarc_attachment_content(service, message_id):
     """
     Extracts DMARC report XML contents from email attachments.
-    
-    Retrieves and processes attachments with .xml, .zip, or .gz extensions from the specified email. Returns a list of XML content bytes extracted from all valid attachments, or None if no valid DMARC reports are found.
     """
     msg = service.users().messages().get(userId='me', id=message_id).execute()
     payload = msg.get('payload', {})
@@ -214,11 +205,6 @@ def get_dmarc_attachment_content(service, message_id):
 
 
 def main():
-    """
-    Authenticates with Gmail, retrieves unread emails with attachments, and extracts DMARC reports.
-    
-    Fetches unread emails containing attachments, displays their metadata, and attempts to extract DMARC report contents from their attachments. Prints the results and handles errors during execution.
-    """
     try:
         service = authenticate_gmail()
         messages = get_unread_dmarc_emails(service)

@@ -68,7 +68,8 @@ def parse_and_format_all(folder_path):
     """
     Parses and formats all DMARC XML files in a specified folder.
     
-    Iterates through each `.xml` file in the given folder, parses the DMARC report, formats the parsed data, and returns a list of formatted report structures.
+    Iterates through each `.xml` file in the given folder, parses the DMARC report, 
+    formats the parsed data, and returns a list of formatted report structures.
     
     Args:
         folder_path: Path to the folder containing DMARC XML files.
@@ -98,11 +99,6 @@ def parse_and_format_xml(xml_string):
     return format_structure(parsed)
 
 def main():
-    """
-    Processes all DMARC XML files in the 'resources/examples' folder and writes the formatted results to 'dmarc_ai_input.json'.
-    
-    Iterates through each XML file in the specified folder, parses and formats the DMARC reports, and saves the aggregated output as a JSON file. Prints a confirmation message upon successful completion.
-    """
     folder_path = "resources/examples" 
     all_reports = parse_and_format_all(folder_path)
 
