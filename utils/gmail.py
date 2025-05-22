@@ -54,6 +54,7 @@ def authenticate_gmail():
                     logger.error(f"Failed to refresh credentials: {e}")
                     raise RuntimeError(f"Failed to refresh credentials: {e}")
             else:
+                logger.info("Looking for credentials file in environment variable")
                 try:
                     credentials_path = get_credentials_file_from_env()
                 except Exception as e:
@@ -94,19 +95,24 @@ def mark_as_read(service, message_id):
 
 def get_unread_dmarc_emails(service, labelIds=['INBOX']):
     """
-    Retrieves unread emails with attachments from specified Gmail labels.
-    
+    Retrieves unread emails with attachments from specified Gmail labels, handling pagination.
+
     Fetches metadata for each matching email, including sender, subject, and date.
     Returns a list of dictionaries containing message ID, thread ID, and header details.
     """
-    results = service.users().messages().list(userId='me', labelIds=labelIds, q="has:attachment is:unread").execute()
-    messages = results.get('messages', [])
-    
-    if not messages:
+    all_messages = []
+    request = service.users().messages().list(userId='me', labelIds=labelIds, q="has:attachment is:unread")
+    while request is not None:
+        results = request.execute()
+        messages = results.get('messages', [])
+        all_messages.extend(messages)
+        request = service.users().messages().list_next(request, results)
+
+    if not all_messages:
         return []
-    
+
     detailed_messages = []
-    for message in messages:
+    for message in all_messages:
         msg = service.users().messages().get(userId='me', id=message['id'], format='metadata', 
                                             metadataHeaders=['From', 'Subject', 'Date']).execute()
         headers = msg['payload']['headers']
