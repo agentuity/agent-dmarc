@@ -93,13 +93,15 @@ def mark_as_read(service, message_id):
     except Exception as error:
         print(f'Error marking message {message_id} as read: {error}')
 
-def get_unread_dmarc_emails(service, labelIds=['INBOX']):
+def get_unread_dmarc_emails(service, labelIds=None):
     """
     Retrieves unread emails with attachments from specified Gmail labels, handling pagination.
 
     Fetches metadata for each matching email, including sender, subject, and date.
     Returns a list of dictionaries containing message ID, thread ID, and header details.
     """
+    if labelIds is None:
+        labelIds = ['INBOX']
     all_messages = []
     request = service.users().messages().list(userId='me', labelIds=labelIds, q="has:attachment is:unread")
     while request is not None:
@@ -153,6 +155,14 @@ def get_dmarc_attachment_content(service, message_id):
     msg = service.users().messages().get(userId='me', id=message_id).execute()
     payload = msg.get('payload', {})
     parts = payload.get('parts', [])
+    def iter_parts(part):
+        if 'parts' in part:
+            for p in part['parts']:
+                yield from iter_parts(p)
+        else:
+            yield part
+
+    parts = list(iter_parts(payload))
     
     xml_contents = []
     
@@ -192,7 +202,13 @@ def get_dmarc_attachment_content(service, message_id):
                 xml_content = gzip.decompress(file_data)
                 xml_contents.append(xml_content)
                 
-        except (zipfile.BadZipFile, gzip.BadGzipFile) as e:
+        except (zipfile.BadZipFile, gzip.BadGzipFile) as err:
+            logging.getLogger("gmail_attachment").warning(
+                "Failed to extract DMARC attachment %s from %s: %s",
+                filename,
+                message_id,
+                err,
+            )
             continue
             
     return xml_contents if xml_contents else None
