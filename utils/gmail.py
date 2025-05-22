@@ -10,6 +10,7 @@ import zipfile
 import gzip
 import io
 import logging
+import binascii
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.modify']
 
@@ -175,9 +176,8 @@ def get_dmarc_attachment_content(service, message_id):
         if not data:
             continue
             
-        file_data = base64.urlsafe_b64decode(data.encode('UTF-8'))
-        
         try:
+            file_data = base64.urlsafe_b64decode(data.encode('UTF-8'))
             if filename.endswith('.xml'):
                 xml_contents.append(file_data)
                 
@@ -192,7 +192,7 @@ def get_dmarc_attachment_content(service, message_id):
                 xml_content = gzip.decompress(file_data)
                 xml_contents.append(xml_content)
                 
-        except (zipfile.BadZipFile, gzip.BadGzipFile) as err:
+        except (UnicodeEncodeError, binascii.Error, zipfile.BadZipFile, gzip.BadGzipFile) as err:
             logging.getLogger("gmail_attachment").warning(
                 "Failed to extract DMARC attachment %s from %s: %s",
                 filename,
