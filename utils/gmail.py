@@ -30,8 +30,8 @@ def authenticate_gmail():
     """
     creds = None
     logger = logging.getLogger("gmail_auth")
+    token_path = 'token.json'
     try:
-        token_path = 'token.json'
         if os.path.exists(token_path):
             creds = Credentials.from_authorized_user_file(token_path, SCOPES)
         else:
@@ -42,33 +42,18 @@ def authenticate_gmail():
                     tmp_token_path = tmp_token.name
                 creds = Credentials.from_authorized_user_file(tmp_token_path, SCOPES)
             else:
-                logger.error("GOOGLE_AUTH_TOKEN environment variable not set and token.json not found")
+                raise FileNotFoundError("GOOGLE_AUTH_TOKEN environment variable not set and token.json not found")
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                try:
-                    creds.refresh(Request())
-                except Exception as e:
-                    logger.error(f"Failed to refresh credentials: {e}")
-                    raise RuntimeError(f"Failed to refresh credentials: {e}")
+                creds.refresh(Request())
             else:
                 logger.info("Looking for credentials file in environment variable")
-                try:
-                    credentials_path = get_credentials_file_from_env()
-                except Exception as e:
-                    logger.error(f"Credentials file not found or invalid: {e}")
-                    raise FileNotFoundError(f"Credentials file not found or invalid: {e}")
-                try:
-                    flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
-                    creds = flow.run_local_server(port=0)
-                except Exception as e:
-                    logger.error(f"Failed to authenticate with Gmail: {e}")
-                    raise RuntimeError(f"Failed to authenticate with Gmail: {e}")
-            try:
-                with open(token_path, 'w') as token:
-                    token.write(creds.to_json())
-            except Exception as e:
-                logger.error(f"Failed to save token.json: {e}")
-                raise IOError(f"Failed to save token.json: {e}")
+                credentials_path = get_credentials_file_from_env()
+                flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
+                creds = flow.run_local_server(port=0)
+            with open(token_path, 'w') as token:
+                token.write(creds.to_json())
+
         return build('gmail', 'v1', credentials=creds)
     except Exception as error:
         logger.error(f"Gmail authentication failed: {error}", exc_info=True, stack_info=True)
