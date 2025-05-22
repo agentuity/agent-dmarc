@@ -18,8 +18,6 @@ KV_NAME = "dmarc-reports"
 async def run(request: AgentRequest, response: AgentResponse, context: AgentContext):
     """
     Entry point for processing DMARC reports and returning an analysis summary.
-    
-    Triggers the DMARC report generation and analysis workflow using the provided agent context, then returns a summary message as a text response.
     """
     context.logger.info("Running DMARC report generation and analysis workflow")
     analysis = await generate_dmarc_report(context)
@@ -28,9 +26,8 @@ async def run(request: AgentRequest, response: AgentResponse, context: AgentCont
 
 async def generate_dmarc_report(context: AgentContext):
     """
-    Fetches unread DMARC-related emails, extracts and analyzes DMARC reports, sends notifications for missing reports, and post-processes results.
-    
-    Retrieves unread emails containing DMARC reports, extracts report attachments, logs and notifies about emails lacking reports, analyzes valid reports, sends summaries to Slack, stores results, and marks processed emails as read. Returns the analysis results or a message if no reports are found.
+    Fetches unread DMARC-related emails, extracts and analyzes DMARC reports, sends slack notifications
+    regarding DMARC reports, and marks emails as read.
     """
     service = authenticate_gmail()
     emails = get_unread_dmarc_emails(service)
@@ -66,7 +63,8 @@ async def post_process_dmarc_emails(service, analyses, context: AgentContext):
     """
     Stores DMARC analysis results and marks corresponding emails as read.
     
-    Iterates over analyzed email IDs, saving each analysis result to persistent storage and marking the associated email as read in Gmail. Errors during processing are logged, but do not interrupt processing of other emails.
+    Iterates over analyzed email IDs, saving each analysis result to persistent storage and marking the
+    associated email as read in Gmail. Errors during processing are logged, but do not interrupt processing of other emails.
     """
     for email_id in analyses:
         try:
@@ -84,7 +82,8 @@ async def analyze_dmarc_and_slack_result(dmarc_reports, context: AgentContext):
     """
     Analyzes DMARC reports for each email, summarizes the results, and sends summaries to Slack.
     
-    For each email, parses and analyzes all DMARC XML reports, aggregates the analyses into a summary, sends the summary to a Slack channel, and returns a dictionary mapping email IDs to their summaries.
+    For each email, parses and analyzes all DMARC XML reports, aggregates the analyses into a summary,
+    sends the summary to a Slack channel, and returns a dictionary mapping email IDs to their summaries.
     """
     results = {}
     for email_id, email_value in dmarc_reports.items():
@@ -113,6 +112,8 @@ def slack_to_dmarc_channel(analysis):
         analysis: The analysis text to be posted to Slack.
     """
     slack_channel = os.getenv("DMARC_CHANNEL_ID")
+    if not slack_channel:
+        raise RuntimeError("Environment variable DMARC_CHANNEL_ID is not set")
     send_message(slack_channel, analysis)
     
 async def analyze_dmarc_report(dmarc_report):
