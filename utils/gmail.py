@@ -154,7 +154,6 @@ def get_dmarc_attachment_content(service, message_id):
     """
     msg = service.users().messages().get(userId='me', id=message_id).execute()
     payload = msg.get('payload', {})
-    parts = payload.get('parts', [])
     def iter_parts(part):
         if 'parts' in part:
             for p in part['parts']:
