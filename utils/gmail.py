@@ -91,7 +91,7 @@ def mark_as_read(service, message_id):
             body={'removeLabelIds': ['UNREAD']}
         ).execute()
     except Exception as error:
-        print(f'Error marking message {message_id} as read: {error}')
+        logging.getLogger("gmail_mark_as_read").error(f'Error marking message {message_id} as read: {error}', exc_info=True)
 
 def get_unread_dmarc_emails(service, labelIds=None):
     """

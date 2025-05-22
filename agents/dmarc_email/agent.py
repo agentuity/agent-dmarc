@@ -62,15 +62,11 @@ async def generate_dmarc_report(context: AgentContext):
 async def post_process_dmarc_emails(service, analyses, context: AgentContext):
     """
     Stores DMARC analysis results and marks corresponding emails as read.
-    
-    Iterates over analyzed email IDs, saving each analysis result to persistent storage and marking the
-    associated email as read in Gmail. Errors during processing are logged, but do not interrupt processing of other emails.
     """
     for email_id in analyses:
         try:
             await context.kv.set(KV_NAME, f"email-id-{email_id}", analyses[email_id])
             mark_as_read(service, email_id)
-            context.logger.info(f"Successfully processed and marked email {email_id} as read")
         except Exception as e:
             context.logger.error(
                 f"Error processing email {email_id}: {e}",
@@ -81,9 +77,6 @@ async def post_process_dmarc_emails(service, analyses, context: AgentContext):
 async def analyze_dmarc_and_slack_result(dmarc_reports, context: AgentContext):
     """
     Analyzes DMARC reports for each email, summarizes the results, and sends summaries to Slack.
-    
-    For each email, parses and analyzes all DMARC XML reports, aggregates the analyses into a summary,
-    sends the summary to a Slack channel, and returns a dictionary mapping email IDs to their summaries.
     """
     results = {}
     for email_id, email_value in dmarc_reports.items():
@@ -120,11 +113,9 @@ async def analyze_dmarc_report(dmarc_report):
     """
     Analyzes a single DMARC report using an OpenAI GPT model.
     
-    Substitutes the provided DMARC XML report into a predefined analysis prompt and sends it to the GPT-4o model for interpretation. Returns the generated analysis as a string.
-    
     Args:
         dmarc_report: The DMARC XML report content to be analyzed.
-    
+
     Returns:
         A string containing the GPT-generated analysis of the DMARC report.
     """
@@ -167,7 +158,6 @@ if __name__ == "__main__":
         """
         Runs the DMARC report processing pipeline and prints the result.
         
-        This function serves as the entry point for standalone execution, invoking the main DMARC processing workflow and outputting the summary to standard output.
         """
         result = await run(None, None, None)
         print(result)
