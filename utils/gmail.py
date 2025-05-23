@@ -120,7 +120,6 @@ def format_email_info(email_data):
     return (
         f"📧 Email Details:\n"
         f"  ID: {email_data['id']}\n"
-        f"  From: {email_data['from']}\n"
         f"  Subject: {email_data['subject']}\n"
         f"  Date: {email_data['date']}"
     )
