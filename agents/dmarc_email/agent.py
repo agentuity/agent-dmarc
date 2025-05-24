@@ -9,7 +9,6 @@ from utils.gmail import (
 	get_unread_dmarc_emails,
 	mark_as_read
 )
-from utils.parser import parse_and_format_xml
 from utils.slack import send_message
 
 client = AsyncOpenAI()
@@ -85,10 +84,8 @@ async def analyze_dmarc_and_slack_result(dmarc_reports, context: AgentContext):
         all_analyses = []
         for xml_content in contents:
             try:
-                formatted_report = parse_and_format_xml(xml_content)
-                if formatted_report:
-                    analysis = await analyze_dmarc_report(formatted_report)
-                    all_analyses.append(analysis)
+                analysis = await analyze_dmarc_report(xml_content)
+                all_analyses.append(analysis)
             except Exception as e:
                 context.logger.error(f"Error analyzing DMARC report: {e}", stack_info=True)
                 continue

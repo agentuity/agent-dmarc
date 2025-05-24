@@ -112,6 +112,7 @@ GOOGLE_AUTH_TOKEN=<base64 encoding of your token.json content>
 SLACK_BOT_TOKEN=<your Slack bot token>
 DMARC_CHANNEL_ID=<your Slack channel ID>
 AGENTUITY_SDK_KEY=<your Agentuity SDK key>
+ENVIRONMENT=production|development
 ```
 
 - To get the value for `GOOGLE_AUTH_TOKEN`, run: `base64 -w 0 token.json` and copy the output of this encoding into `.env` variable

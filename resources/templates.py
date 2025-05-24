@@ -2,7 +2,7 @@ from string import Template
 
 analyze_dmarc_template = '''You are an expert in email authentication and DMARC analysis.
 
-Given a DMARC aggregate report in JSON format, analyze it and produce a JSON-structured summary.
+Given a DMARC aggregate report in XML format, analyze it and produce a JSON-structured summary.
 The goal is to provide a concise analysis of the report -- specifically spot problems that are included
 in the report.
 
