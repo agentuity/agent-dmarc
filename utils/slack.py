@@ -21,7 +21,3 @@ def send_message(channel_id, message_text):
         logging.info(f"✅ Message sent to {channel_id}")
     except SlackApiError as e:
         logging.error(f"❌ Error sending message: {e.response['error']}")
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    send_message("C08T4A9S3BK", "👋 Hello from DMARC Agent!")

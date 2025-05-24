@@ -147,16 +147,3 @@ async def summarize_analysis(results, email):
         ]
     )
     return response.choices[0].message.content
-
-if __name__ == "__main__":
-    import asyncio
-    
-    async def main():
-        """
-        Runs the DMARC report processing pipeline and prints the result.
-        
-        """
-        result = await run(None, None, None)
-        print(result)
-        
-    asyncio.run(main())

@@ -211,26 +211,3 @@ def get_dmarc_attachment_content(service, message_id):
             continue
             
     return xml_contents if xml_contents else None
-
-
-def main():
-    try:
-        service = authenticate_gmail()
-        messages = get_unread_dmarc_emails(service)
-        if not messages:
-            print('No unread emails with attachments found.')
-            return
-        
-        print(f"Found {len(messages)} unread emails with attachments:")
-        for email in messages:
-            print("\n" + format_email_info(email))
-            content = get_dmarc_attachment_content(service, email['id'])
-            if content:
-                print(f"✅ Contains DMARC report: {len(content)} attachment(s) found")
-            else:
-                print("❌ No DMARC report found in attachments")
-    except Exception as error:
-        print(f'An error occurred: {error}')
-
-if __name__ == "__main__":
-    main()
