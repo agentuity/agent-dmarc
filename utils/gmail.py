@@ -210,4 +210,5 @@ def get_dmarc_attachment_content(service, message_id):
             )
             continue
             
-    return xml_contents if xml_contents else None
+    xml_strings = [b.decode('utf-8') for b in xml_contents]
+    return xml_strings if xml_strings else None
