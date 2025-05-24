@@ -1,59 +1,63 @@
+import base64
+import binascii
+import gzip
+import io
+import json
+import logging
 import os
 import os.path
-import base64
+import zipfile
+
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-import tempfile
-import zipfile
-import gzip
-import io
-import logging
-import binascii
+
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.modify']
 
-def get_credentials_file_from_env():
-    if os.path.exists("credentials.json"):
-        return "credentials.json"
+def get_credentials_info_from_env():
     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
     if not creds_json:
         raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set and credentials.json not found")
-    with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.json') as tmp:
-        tmp.write(creds_json)
-        return tmp.name
+    return json.loads(creds_json)
 
 def authenticate_gmail():
     """
     Authenticates and returns an authorized Gmail API service object.
+    In production, only GOOGLE_AUTH_TOKEN is allowed (no OAuth flow).
+    In non-production, fallback to OAuth flow if needed.
     """
     creds = None
     logger = logging.getLogger("gmail_auth")
-    token_path = 'token.json'
+    env = os.environ.get("environment", "development")
     try:
-        if os.path.exists(token_path):
-            creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+        google_auth_token = os.environ.get('GOOGLE_AUTH_TOKEN')
+        if google_auth_token:
+            try:
+                decoded = base64.b64decode(google_auth_token).decode('utf-8')
+                token_data = json.loads(decoded)
+                creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+            except Exception as e:
+                logger.error("Failed to decode or parse GOOGLE_AUTH_TOKEN: %s", e)
+                raise
         else:
-            google_auth_token = os.environ.get('GOOGLE_AUTH_TOKEN')
-            if google_auth_token:
-                with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.json') as tmp_token:
-                    tmp_token.write(google_auth_token)
-                    tmp_token_path = tmp_token.name
-                creds = Credentials.from_authorized_user_file(tmp_token_path, SCOPES)
-            else:
-                raise FileNotFoundError("GOOGLE_AUTH_TOKEN environment variable not set and token.json not found")
+            if env == "production":
+                raise RuntimeError("In production, GOOGLE_AUTH_TOKEN environment variable must be set and valid. OAuth flow is not allowed.")
+            logger.info("Looking for credentials info in environment variable (non-production)")
+            credentials_info = get_credentials_info_from_env()
+            flow = InstalledAppFlow.from_client_config(credentials_info, SCOPES)
+            creds = flow.run_local_server(port=0)
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                logger.info("Looking for credentials file in environment variable")
-                credentials_path = get_credentials_file_from_env()
-                flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
+                if env == "production":
+                    raise RuntimeError("In production, could not obtain valid credentials from GOOGLE_AUTH_TOKEN. OAuth flow is not allowed.")
+                logger.info("Re-running OAuth flow for new credentials (non-production)")
+                credentials_info = get_credentials_info_from_env()
+                flow = InstalledAppFlow.from_client_config(credentials_info, SCOPES)
                 creds = flow.run_local_server(port=0)
-            with open(token_path, 'w') as token:
-                token.write(creds.to_json())
-
         return build('gmail', 'v1', credentials=creds)
     except Exception as error:
         logger.error(f"Gmail authentication failed: {error}", exc_info=True, stack_info=True)

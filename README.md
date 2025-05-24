@@ -108,14 +108,13 @@ To deploy this agent in a production environment (non-interactive, headless, or 
 Set the following environment variables in your production environment (e.g., in your `.env` file, secret manager, or deployment config):
 
 ```
-GOOGLE_AUTH_TOKEN=<contents of your token.json>
+GOOGLE_AUTH_TOKEN=<base64 encoding of your token.json content>
 SLACK_BOT_TOKEN=<your Slack bot token>
 DMARC_CHANNEL_ID=<your Slack channel ID>
 AGENTUITY_SDK_KEY=<your Agentuity SDK key>
 ```
 
-- To get the value for `GOOGLE_AUTH_TOKEN`, open your `token.json` and copy its entire contents (including braces `{}`) as a single line or valid JSON string.
-- (Optional) If you want to avoid using a `credentials.json` file, you can also store its contents in an environment variable (e.g., `GOOGLE_CREDENTIALS_JSON`) and update your code to use it.
+- To get the value for `GOOGLE_AUTH_TOKEN`, run: `base64 -w 0 token.json` and copy the output of this encoding into `.env` variable
 
 ### 3. Deploy Your Code
 - Ensure your environment variables are set and accessible to your app.
