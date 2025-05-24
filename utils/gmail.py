@@ -16,52 +16,73 @@ from googleapiclient.discovery import build
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.modify']
 
-def get_credentials_info_from_env():
+def get_google_creds():
+    """
+    Returns credentials info as a dict, from the GOOGLE_CREDENTIALS_JSON env var (if set),
+    or from a local credentials.json file (if present). Raises an error if neither is available.
+    """
     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-    if not creds_json:
+    if creds_json:
+        return json.loads(creds_json)
+    elif os.path.exists("credentials.json"):
+        with open("credentials.json", "r") as f:
+            return json.load(f)
+    else:
         raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable not set and credentials.json not found")
-    return json.loads(creds_json)
 
-def authenticate_gmail():
+def is_production() -> bool:
+    """Returns True if running in production environment."""
+    return os.environ.get("ENVIRONMENT", "development").lower() == "production"
+
+def parse_google_auth_token(token: str, logger: logging.Logger) -> dict:
+    """
+    Decodes a base64-encoded JSON string from the environment variable.
+    Falls back to raw JSON if not base64.
+    """
+    try:
+        decoded = base64.b64decode(token).decode('utf-8')
+        return json.loads(decoded)
+    except Exception as base64_err:
+        try:
+            return json.loads(token)
+        except Exception as json_err:
+            logger.error("Failed to decode GOOGLE_AUTH_TOKEN as base64 (%s) or JSON (%s)", base64_err, json_err)
+            raise ValueError("GOOGLE_AUTH_TOKEN is neither valid base64 nor valid JSON")
+
+def authenticate_gmail() -> object:
     """
     Authenticates and returns an authorized Gmail API service object.
     In production, only GOOGLE_AUTH_TOKEN is allowed (no OAuth flow).
     In non-production, fallback to OAuth flow if needed.
     """
-    creds = None
     logger = logging.getLogger("gmail_auth")
-    env = os.environ.get("environment", "development")
-    try:
-        google_auth_token = os.environ.get('GOOGLE_AUTH_TOKEN')
-        if google_auth_token:
-            try:
-                decoded = base64.b64decode(google_auth_token).decode('utf-8')
-                token_data = json.loads(decoded)
-                creds = Credentials.from_authorized_user_info(token_data, SCOPES)
-            except Exception as e:
-                logger.error("Failed to decode or parse GOOGLE_AUTH_TOKEN: %s", e)
-                raise
+    logger.info("Starting Gmail authentication. Environment: %s", os.environ.get("ENVIRONMENT", "development"))
+    google_auth_token = os.environ.get('GOOGLE_AUTH_TOKEN')
+    creds = None
+
+    if google_auth_token:
+        token_data = parse_google_auth_token(google_auth_token, logger)
+        creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+    elif is_production():
+        raise RuntimeError("In production, GOOGLE_AUTH_TOKEN environment variable must be set and valid. OAuth flow is not allowed.")
+    else:
+        logger.info("Looking for credentials info in environment variable (non-production)")
+        credentials_info = get_google_creds()
+        flow = InstalledAppFlow.from_client_config(credentials_info, SCOPES)
+        creds = flow.run_local_server(port=0)
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        elif is_production():
+            raise RuntimeError("In production, could not obtain valid credentials from GOOGLE_AUTH_TOKEN. OAuth flow is not allowed.")
         else:
-            if env == "production":
-                raise RuntimeError("In production, GOOGLE_AUTH_TOKEN environment variable must be set and valid. OAuth flow is not allowed.")
-            logger.info("Looking for credentials info in environment variable (non-production)")
-            credentials_info = get_credentials_info_from_env()
+            logger.info("Re-running OAuth flow for new credentials (non-production)")
+            credentials_info = get_google_creds()
             flow = InstalledAppFlow.from_client_config(credentials_info, SCOPES)
             creds = flow.run_local_server(port=0)
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                if env == "production":
-                    raise RuntimeError("In production, could not obtain valid credentials from GOOGLE_AUTH_TOKEN. OAuth flow is not allowed.")
-                logger.info("Re-running OAuth flow for new credentials (non-production)")
-                credentials_info = get_credentials_info_from_env()
-                flow = InstalledAppFlow.from_client_config(credentials_info, SCOPES)
-                creds = flow.run_local_server(port=0)
-        return build('gmail', 'v1', credentials=creds)
-    except Exception as error:
-        logger.error(f"Gmail authentication failed: {error}", exc_info=True, stack_info=True)
-        raise
+
+    return build('gmail', 'v1', credentials=creds)
 
 def mark_as_read(service, message_id):
     """
