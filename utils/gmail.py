@@ -47,7 +47,7 @@ def parse_google_auth_token(token: str, logger: logging.Logger) -> dict:
             return json.loads(token)
         except Exception as json_err:
             logger.error("Failed to decode GOOGLE_AUTH_TOKEN as base64 (%s) or JSON (%s)", base64_err, json_err)
-            raise ValueError("GOOGLE_AUTH_TOKEN is neither valid base64 nor valid JSON")
+            raise ValueError("GOOGLE_AUTH_TOKEN is neither valid base64 nor valid JSON") from json_err
 
 def authenticate_gmail() -> object:
     """
