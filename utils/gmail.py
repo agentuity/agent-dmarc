@@ -40,7 +40,9 @@ def parse_google_auth_token(token: str, logger: logging.Logger) -> dict:
     Falls back to raw JSON if not base64.
     """
     try:
-        decoded = base64.b64decode(token).decode('utf-8')
+        # Pad the token to a multiple of 4
+        padded_token = token + '=' * (-len(token) % 4)
+        decoded = base64.urlsafe_b64decode(padded_token).decode('utf-8')
         return json.loads(decoded)
     except Exception as base64_err:
         try:
@@ -210,5 +212,13 @@ def get_dmarc_attachment_content(service, message_id):
             )
             continue
             
-    xml_strings = [b.decode('utf-8') for b in xml_contents]
+    xml_strings = []
+    for b in xml_contents:
+        try:
+            xml_strings.append(b.decode('utf-8'))
+        except UnicodeDecodeError as e:
+            logging.getLogger("gmail_attachment").warning(
+                "Failed to decode DMARC XML attachment in message %s: %s", message_id, e
+            )
+            continue
     return xml_strings if xml_strings else None
