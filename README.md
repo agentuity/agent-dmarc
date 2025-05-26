@@ -8,12 +8,6 @@
 
 Welcome to the DMARC Email Processing Agent! This project automatically monitors Gmail for DMARC reports, processes them, and sends notifications to Slack. Built with the Agentuity platform for reliable, scalable email automation.
 
-# Project Overview
-# Quick Start (local development)
-# Production Deployment
-# Configuration
-# Troubleshooting
-
 ## 📋 Prerequisites
 
 Before you begin, ensure you have the following installed:
