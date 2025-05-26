@@ -1,20 +1,149 @@
-from openai import AsyncOpenAI
+import os
 from agentuity import AgentRequest, AgentResponse, AgentContext
+from openai import AsyncOpenAI
+from resources.templates import templates
+from utils.gmail import (
+	authenticate_gmail,
+	format_email_info,
+	get_dmarc_attachment_content,
+	get_unread_dmarc_emails,
+	mark_as_read
+)
+from utils.slack import send_message
 
 client = AsyncOpenAI()
+KV_NAME = "dmarc-reports"
 
 async def run(request: AgentRequest, response: AgentResponse, context: AgentContext):
-    chat_completion = await client.chat.completions.create(
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a friendly assistant!",
-            },
-            {
-                "role": "user",
-                "content": await request.data.text() or "Why is the sky blue?",
-            },
-        ],
+    """
+    Entry point for processing DMARC reports and returning an analysis summary.
+    """
+    context.logger.info("Running DMARC report generation and analysis workflow")
+    analysis = await generate_dmarc_report(context)
+    summary = f"DMARC analysis complete: {analysis}"
+    return response.json({"summary": summary})
+
+async def generate_dmarc_report(context: AgentContext):
+    """
+    Fetches unread DMARC-related emails, extracts and analyzes DMARC reports, sends slack notifications
+    regarding DMARC reports, and marks emails as read.
+    """
+    service = authenticate_gmail()
+    emails = get_unread_dmarc_emails(service)
+    context.logger.info(f"Found {len(emails)} unread DMARC-related emails")
+    dmarc_reports = {}
+    emails_without_dmarc = {}
+    for email in emails:
+        contents = get_dmarc_attachment_content(service, email['id'])
+        if not contents:
+            context.logger.error(f"No DMARC report found for email {email['id']}")
+            emails_without_dmarc[email['id']] = email
+            continue
+        email_value = {
+            'email': email,
+            'dmarc_contents': contents}
+        dmarc_reports[email['id']] = email_value
+    
+    if not dmarc_reports:
+        return "No DMARC reports found"
+    
+    context.logger.info(f"Found {len(dmarc_reports)} DMARC reports to analyze")
+    
+    for email_id, email_data in emails_without_dmarc.items():
+        formatted_email_info = format_email_info(email_data)
+        context.logger.info(f"No DMARC report found for:\n{formatted_email_info}")
+        slack_to_dmarc_channel(f"❌ No DMARC report found in the following email:\n{formatted_email_info}")
+    
+    results = await analyze_dmarc_and_slack_result(dmarc_reports, context)
+    await post_process_dmarc_emails(service, results, context)
+    return results
+
+async def post_process_dmarc_emails(service, analyses, context: AgentContext):
+    """
+    Stores DMARC analysis results and marks corresponding emails as read.
+    """
+    for email_id in analyses:
+        try:
+            await context.kv.set(KV_NAME, f"email-id-{email_id}", analyses[email_id])
+            mark_as_read(service, email_id)
+        except Exception as e:
+            context.logger.error(
+                f"Error processing email {email_id}: {e}",
+                stack_info=True
+            )
+            continue
+
+async def analyze_dmarc_and_slack_result(dmarc_reports, context: AgentContext):
+    """
+    Analyzes DMARC reports for each email, summarizes the results, and sends summaries to Slack.
+    """
+    results = {}
+    for email_id, email_value in dmarc_reports.items():
+        contents = email_value['dmarc_contents']
+        email = email_value['email']
+        all_analyses = []
+        for xml_content in contents:
+            try:
+                analysis = await analyze_dmarc_report(xml_content)
+                all_analyses.append(analysis)
+            except Exception as e:
+                context.logger.error(f"Error analyzing DMARC report: {e}", stack_info=True)
+                continue
+        summary = await summarize_analysis(all_analyses, email)
+        slack_to_dmarc_channel(summary)
+        results[email_id] = summary
+    return results
+
+def slack_to_dmarc_channel(analysis):
+    """
+    Sends a DMARC analysis message to the configured Slack channel.
+    
+    Args:
+        analysis: The analysis text to be posted to Slack.
+    """
+    slack_channel = os.getenv("DMARC_CHANNEL_ID")
+    if not slack_channel:
+        raise RuntimeError("Environment variable DMARC_CHANNEL_ID is not set")
+    send_message(slack_channel, analysis)
+    
+async def analyze_dmarc_report(dmarc_report):
+    """
+    Analyzes a single DMARC report using an OpenAI GPT model.
+    
+    Args:
+        dmarc_report: The DMARC XML report content to be analyzed.
+
+    Returns:
+        A string containing the GPT-generated analysis of the DMARC report.
+    """
+    template = templates["analyze-dmarc"]
+    compiled_prompt = template.substitute(xml=dmarc_report)
+    response = await client.chat.completions.create(
         model="gpt-4o",
+        messages=[{"role": "user", "content": compiled_prompt}]
     )
-    return response.text(chat_completion.choices[0].message.content)
+    return response.choices[0].message.content
+
+async def summarize_analysis(results, email):
+    """
+    Generates a concise summary of multiple DMARC analysis results using OpenAI GPT.
+    
+    Args:
+        results: A list of individual DMARC analysis strings.
+        email: Metadata or identifying information for the email being summarized.
+    
+    Returns:
+        A single summarized report string generated by the GPT model.
+    """
+    if not results:
+        summary = "❌ Unable to analyse DMARC report(s) – parsing failed."
+        return summary
+    template = templates["summarize-analysis"]
+    compiled_prompt = template.substitute(analysis=results, email=email)
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "user", "content": compiled_prompt}
+        ]
+    )
+    return response.choices[0].message.content

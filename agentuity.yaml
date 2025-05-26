@@ -43,7 +43,7 @@ deployment:
     # The CPU requirements
     cpu: 500M
     # The disk size requirements
-    disk: 100Mi
+    disk: 1000Mi
 # You should not need to change these value
 bundler:
   enabled: true
@@ -57,8 +57,8 @@ bundler:
 # The agents that are part of this project
 agents:
   - # The ID of the Agent which is automatically generated
-    id: dmarc-email
+    id: agent_d0a9fd225ccef6daea043069e0441235
     # The name of the Agent which is editable
-    name: dmarc-email
+    name: dmarc_email
     # The description of the Agent which is editable
-    description: An agent that retrieves emails and pull XML DMARC attachments.
+    description: This agent processes DMARC email reports and extracts actionable insights.
