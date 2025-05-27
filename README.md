@@ -67,106 +67,37 @@ uv run --env-file .env server.py
 
 The DMARC Email Processing Agent follows a structured workflow starting from the `run()` method in `agents/dmarc_email/agent.py`:
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                                                                         │
-│                           AGENT ENTRY POINT                             │
-│                                                                         │
-│  ┌─────────────┐                                                        │
-│  │             │                                                        │
-│  │  run()      │  Entry point that initiates the DMARC processing flow  │
-│  │             │                                                        │
-│  └──────┬──────┘                                                        │
-│         │                                                               │
-│         ▼                                                               │
-│  ┌─────────────────────┐                                                │
-│  │                     │                                                │
-│  │ generate_dmarc_     │  Orchestrates the entire DMARC workflow        │
-│  │ report()            │                                                │
-│  │                     │                                                │
-│  └─────────┬───────────┘                                                │
-│            │                                                            │
-└────────────┼────────────────────────────────────────────────────────────┘
-             │
-             │    ┌───────────────────────────────────────────────────────┐
-             │    │                                                       │
-             │    │                 EMAIL PROCESSING                      │
-             │    │                                                       │
-             ├───▶│  ┌────────────────────┐                              │
-             │    │  │                    │                              │
-             │    │  │ authenticate_      │  Authenticates with Gmail    │
-             │    │  │ gmail()            │  using OAuth                 │
-             │    │  │                    │                              │
-             │    │  └──────────┬─────────┘                              │
-             │    │             │                                         │
-             │    │             ▼                                         │
-             │    │  ┌────────────────────┐                              │
-             │    │  │                    │                              │
-             │    │  │ get_unread_dmarc_  │  Retrieves unread emails     │
-             │    │  │ emails()           │  with attachments            │
-             │    │  │                    │                              │
-             │    │  └──────────┬─────────┘                              │
-             │    │             │                                         │
-             │    │             ▼                                         │
-             │    │  ┌────────────────────┐                              │
-             │    │  │                    │                              │
-             │    │  │ get_dmarc_         │  Extracts DMARC XML reports  │
-             │    │  │ attachment_        │  from email attachments      │
-             │    │  │ content()          │  (.xml, .zip, .gz)           │
-             │    │  │                    │                              │
-             │    │  └────────────────────┘                              │
-             │    │                                                       │
-             │    └───────────────────────────────────────────────────────┘
-             │
-             │    ┌───────────────────────────────────────────────────────┐
-             │    │                                                       │
-             │    │                 ANALYSIS PROCESSING                   │
-             │    │                                                       │
-             ├───▶│  ┌────────────────────┐                              │
-             │    │  │                    │                              │
-             │    │  │ analyze_dmarc_and_ │  Processes each DMARC report │
-             │    │  │ slack_result()     │  and sends results to Slack  │
-             │    │  │                    │                              │
-             │    │  └──────────┬─────────┘                              │
-             │    │             │                                         │
-             │    │             ▼                                         │
-             │    │  ┌────────────────────┐                              │
-             │    │  │                    │                              │
-             │    │  │ analyze_dmarc_     │  Uses OpenAI GPT-4o to       │
-             │    │  │ report()           │  analyze XML reports         │
-             │    │  │                    │  with analyze-dmarc template │
-             │    │  └──────────┬─────────┘                              │
-             │    │             │                                         │
-             │    │             ▼                                         │
-             │    │  ┌────────────────────┐                              │
-             │    │  │                    │                              │
-             │    │  │ summarize_         │  Generates concise summary   │
-             │    │  │ analysis()         │  with summarize-analysis     │
-             │    │  │                    │  template                    │
-             │    │  └──────────┬─────────┘                              │
-             │    │             │                                         │
-             │    │             ▼                                         │
-             │    │  ┌────────────────────┐                              │
-             │    │  │                    │                              │
-             │    │  │ slack_to_dmarc_    │  Sends analysis to Slack     │
-             │    │  │ channel()          │  channel                     │
-             │    │  │                    │                              │
-             │    │  └────────────────────┘                              │
-             │    │                                                       │
-             │    └───────────────────────────────────────────────────────┘
-             │
-             │    ┌───────────────────────────────────────────────────────┐
-             │    │                                                       │
-             │    │                 POST PROCESSING                       │
-             │    │                                                       │
-             └───▶│  ┌────────────────────┐                              │
-                  │  │                    │                              │
-                  │  │ post_process_      │  Stores results and marks    │
-                  │  │ dmarc_emails()     │  emails as read              │
-                  │  │                    │                              │
-                  │  └────────────────────┘                              │
-                  │                                                       │
-                  └───────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph "AGENT ENTRY POINT"
+        A[run\(\)] -->|"Initiates workflow"| B[generate_dmarc_report\(\)]
+    end
+    
+    B --> C
+    B --> D
+    B --> F
+    
+    subgraph "EMAIL PROCESSING"
+        C[authenticate_gmail\(\)] -->|"OAuth authentication"| C1[get_unread_dmarc_emails\(\)]
+        C1 -->|"Fetch emails with attachments"| C2[get_dmarc_attachment_content\(\)]
+    end
+    
+    subgraph "ANALYSIS PROCESSING"
+        D[analyze_dmarc_and_slack_result\(\)] -->|"Process each report"| D1[analyze_dmarc_report\(\)]
+        D1 -->|"Using analyze-dmarc template"| D2[summarize_analysis\(\)]
+        D2 -->|"Using summarize-analysis template"| D3[slack_to_dmarc_channel\(\)]
+    end
+    
+    subgraph "POST PROCESSING"
+        F[post_process_dmarc_emails\(\)] -->|"Store results and mark as read"| F1[mark_as_read\(\)]
+    end
+    
+    classDef primary fill:#f9f,stroke:#333,stroke-width:2px
+    classDef secondary fill:#bbf,stroke:#333,stroke-width:1px
+    classDef tertiary fill:#dfd,stroke:#333,stroke-width:1px
+    
+    class A,B primary
+    class C,C1,C2,D,D1,D2,D3,F,F1 secondary
 ```
 
 ### Input and Output
