@@ -70,7 +70,7 @@ The DMARC Email Processing Agent follows a structured workflow starting from the
 ```mermaid
 flowchart TD
     subgraph "AGENT ENTRY POINT"
-        A[run\(\)] -->|"Initiates workflow"| B[generate_dmarc_report\(\)]
+        A[run()] -->|"Initiates workflow"| B[generate_dmarc_report()]
     end
     
     B --> C
@@ -78,18 +78,18 @@ flowchart TD
     B --> F
     
     subgraph "EMAIL PROCESSING"
-        C[authenticate_gmail\(\)] -->|"OAuth authentication"| C1[get_unread_dmarc_emails\(\)]
-        C1 -->|"Fetch emails with attachments"| C2[get_dmarc_attachment_content\(\)]
+        C[authenticate_gmail()] -->|"OAuth authentication"| C1[get_unread_dmarc_emails()]
+        C1 -->|"Fetch emails with attachments"| C2[get_dmarc_attachment_content()]
     end
     
     subgraph "ANALYSIS PROCESSING"
-        D[analyze_dmarc_and_slack_result\(\)] -->|"Process each report"| D1[analyze_dmarc_report\(\)]
-        D1 -->|"Using analyze-dmarc template"| D2[summarize_analysis\(\)]
-        D2 -->|"Using summarize-analysis template"| D3[slack_to_dmarc_channel\(\)]
+        D[analyze_dmarc_and_slack_result()] -->|"Process each report"| D1[analyze_dmarc_report()]
+        D1 -->|"Using analyze-dmarc template"| D2[summarize_analysis()]
+        D2 -->|"Using summarize-analysis template"| D3[slack_to_dmarc_channel()]
     end
     
     subgraph "POST PROCESSING"
-        F[post_process_dmarc_emails\(\)] -->|"Store results and mark as read"| F1[mark_as_read\(\)]
+        F[post_process_dmarc_emails()] -->|"Store results and mark as read"| F1[mark_as_read()]
     end
     
     classDef primary fill:#f9f,stroke:#333,stroke-width:2px
