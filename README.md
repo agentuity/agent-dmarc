@@ -2,7 +2,7 @@
     <img src="https://raw.githubusercontent.com/agentuity/cli/refs/heads/main/.github/Agentuity.png" alt="Agentuity" width="100"/> <br/>
     <strong>Build Agents, Not Infrastructure</strong> <br/>
 	<br/>
-		<img src="https://app.agentuity.com/img/deploy.svg" alt="Agentuity" href"https://app.agentuity.com/deploy"/> 
+		<img src="https://app.agentuity.com/img/deploy.svg" alt="Agentuity" href="https://app.agentuity.com/deploy"/> 
 
 <br />
 </div>
