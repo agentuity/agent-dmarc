@@ -69,43 +69,17 @@ The DMARC Email Processing Agent follows a structured workflow starting from the
 
 ```mermaid
 graph TD;
-    A[run()] --> B[generate_dmarc_report()];
-    
-    B --> C;
-    B --> D;
-    B --> F;
-    
-    C[authenticate_gmail()] --> C1[get_unread_dmarc_emails()];
-    C1 --> C2[get_dmarc_attachment_content()];
-    
-    D[analyze_dmarc_and_slack_result()] --> D1[analyze_dmarc_report()];
-    D1 --> D2[summarize_analysis()];
-    D2 --> D3[slack_to_dmarc_channel()];
-    
-    F[post_process_dmarc_emails()] --> F1[mark_as_read()];
-    
-    subgraph "AGENT ENTRY POINT"
-        A;
-        B;
-    end
-    
-    subgraph "EMAIL PROCESSING"
-        C;
-        C1;
-        C2;
-    end
-    
-    subgraph "ANALYSIS PROCESSING"
-        D;
-        D1;
-        D2;
-        D3;
-    end
-    
-    subgraph "POST PROCESSING"
-        F;
-        F1;
-    end
+    A[Agent Entry]-->B[Email Processing];
+    A-->C[Analysis];
+    A-->D[Post Processing];
+    B-->E[Authenticate Gmail];
+    B-->F[Get Unread Emails];
+    B-->G[Extract Attachments];
+    C-->H[Analyze Reports];
+    C-->I[Summarize Results];
+    C-->J[Send to Slack];
+    D-->K[Store Results];
+    D-->L[Mark as Read];
 ```
 
 ### Input and Output
