@@ -68,6 +68,41 @@ uv run --env-file .env server.py
 └── agentuity.yaml      # Agentuity project configuration
 ```
 
+## 🔄 Agent Flow Diagram
+
+The DMARC Email Processing Agent follows a structured workflow starting from the `run()` method in `agents/dmarc_email/agent.py`:
+
+```mermaid
+graph TD;
+    A[Entry Point]-->B[Gmail Auth];
+    B-->C[Get Unread Emails];
+    C-->D[Extract Attachments];
+    D-->E[Analyze Reports];
+    E-->F[Summarize Results];
+    F-->G[Send to Slack];
+    G-->H[Store Results in KV];
+    H-->I[Mark as Read];
+```
+
+### Input and Output
+
+#### Input
+- **DMARC Report Emails**: Unread emails in Gmail with DMARC report attachments
+- **Attachment Types**: XML, ZIP, or GZ files containing DMARC reports
+- **XML Content**: DMARC reports in XML format containing authentication results
+
+#### Processing
+1. **Authentication**: OAuth with Gmail API
+2. **Email Retrieval**: Fetch unread emails with attachments
+3. **Extraction**: Parse and extract DMARC XML reports from attachments
+4. **Analysis**: Process reports using OpenAI GPT-4o with specialized prompts
+5. **Summarization**: Generate concise summaries of analysis results
+
+#### Output
+- **JSON Response**: Summary of DMARC analysis returned by the agent
+- **Slack Notifications**: Analysis results sent to configured Slack channel
+- **Storage**: Results stored in key-value store for future reference
+
 ## 🔧 Configuration
 
 Your project configuration is stored in `agentuity.yaml`. This file defines your agents, development settings, and deployment configuration.
