@@ -69,17 +69,14 @@ The DMARC Email Processing Agent follows a structured workflow starting from the
 
 ```mermaid
 graph TD;
-    A[Agent Entry]-->B[Email Processing];
-    A-->C[Analysis];
-    A-->D[Post Processing];
-    B-->E[Authenticate Gmail];
-    B-->F[Get Unread Emails];
-    B-->G[Extract Attachments];
-    C-->H[Analyze Reports];
-    C-->I[Summarize Results];
-    C-->J[Send to Slack];
-    D-->K[Store Results];
-    D-->L[Mark as Read];
+    A[Entry Point]-->B[Gmail Auth];
+    B-->C[Get Unread Emails];
+    C-->D[Extract Attachments];
+    D-->E[Analyze Reports];
+    E-->F[Summarize Results];
+    F-->G[Send to Slack];
+    G-->H[Store Results in KV];
+    H-->I[Mark as Read];
 ```
 
 ### Input and Output
