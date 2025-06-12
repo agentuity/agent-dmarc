@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "DMARC is a project aimed to automate process of analyzing DMARC report and resolve DMARC issues"
 requires-python = ">=3.10, <=3.12"
 dependencies = [
-    "agentuity>=0.0.83",
+    "agentuity>=0.0.93",
     "openai>=1.78.1",
     "google-api-python-client==2.169.0",
     "google-auth-httplib2==0.2.0",

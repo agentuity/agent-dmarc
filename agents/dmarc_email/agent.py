@@ -1,5 +1,6 @@
 import os
 from agentuity import AgentRequest, AgentResponse, AgentContext
+from agentuity.io.email import Email
 from openai import AsyncOpenAI
 from resources.templates import templates
 from utils.gmail import (
@@ -10,6 +11,7 @@ from utils.gmail import (
 	mark_as_read
 )
 from utils.slack import send_message
+import gzip
 
 client = AsyncOpenAI()
 KV_NAME = "dmarc-reports"
@@ -18,81 +20,90 @@ async def run(request: AgentRequest, response: AgentResponse, context: AgentCont
     """
     Entry point for processing DMARC reports and returning an analysis summary.
     """
-    context.logger.info("Running DMARC report generation and analysis workflow")
-    analysis = await generate_dmarc_report(context)
-    summary = f"DMARC analysis complete: {analysis}"
-    return response.json({"summary": summary})
+    
+    # Check for emails from request data
+    email = await request.data.email()
+    if email:
+        print(f"email: {email}")
+        context.logger.info('email subject: %s', email.subject)
+        analysis = await generate_dmarc_report_from_email(email, context)
+        summary = f"DMARC analysis complete: {analysis}"
+        return response.json({"summary": summary})
+    else:
+        return response.text("No email found")
 
-async def generate_dmarc_report(context: AgentContext):
+async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
     """
-    Fetches unread DMARC-related emails, extracts and analyzes DMARC reports, sends slack notifications
-    regarding DMARC reports, and marks emails as read.
+    Processes an email and returns a summary of the DMARC report.
     """
-    service = authenticate_gmail()
-    emails = get_unread_dmarc_emails(service)
-    context.logger.info(f"Found {len(emails)} unread DMARC-related emails")
-    dmarc_reports = {}
-    emails_without_dmarc = {}
-    for email in emails:
-        contents = get_dmarc_attachment_content(service, email['id'])
-        if not contents:
-            context.logger.error(f"No DMARC report found for email {email['id']}")
-            emails_without_dmarc[email['id']] = email
+    context.logger.info(f"Processing email with {len(email.attachments)} attachments")
+    
+    dmarc_contents = []
+    
+    # Extract DMARC XML content from attachments
+    for attachment in email.attachments:
+        context.logger.info(f"Processing attachment: {attachment.filename}")
+        
+        # Skip non-DMARC related attachments
+        if not (attachment.filename.endswith('.xml') or 
+                attachment.filename.endswith('.xml.gz') or 
+                attachment.filename.endswith('.zip') or
+                'dmarc' in attachment.filename.lower()):
+            context.logger.info(f"Skipping non-DMARC attachment: {attachment.filename}")
             continue
-        email_value = {
-            'email': email,
-            'dmarc_contents': contents}
-        dmarc_reports[email['id']] = email_value
-    
-    if not dmarc_reports:
-        return "No DMARC reports found"
-    
-    context.logger.info(f"Found {len(dmarc_reports)} DMARC reports to analyze")
-    
-    for email_id, email_data in emails_without_dmarc.items():
-        formatted_email_info = format_email_info(email_data)
-        context.logger.info(f"No DMARC report found for:\n{formatted_email_info}")
-        slack_to_dmarc_channel(f"❌ No DMARC report found in the following email:\n{formatted_email_info}")
-    
-    results = await analyze_dmarc_and_slack_result(dmarc_reports, context)
-    await post_process_dmarc_emails(service, results, context)
-    return results
-
-async def post_process_dmarc_emails(service, analyses, context: AgentContext):
-    """
-    Stores DMARC analysis results and marks corresponding emails as read.
-    """
-    for email_id in analyses:
+            
         try:
-            await context.kv.set(KV_NAME, f"email-id-{email_id}", analyses[email_id])
-            mark_as_read(service, email_id)
+            data = await attachment.data()
+            content = await data.binary()
+            # Handle different attachment formats (XML, gzipped XML, zip files)
+            if attachment.filename.endswith('.xml'):
+                xml_content = content.decode('utf-8')
+                dmarc_contents.append(xml_content)
+            elif attachment.filename.endswith('.xml.gz'):
+                xml_content = gzip.decompress(content).decode('utf-8')
+                dmarc_contents.append(xml_content)
+            elif attachment.filename.endswith('.zip'):
+                import zipfile
+                import io
+                with zipfile.ZipFile(io.BytesIO(content), 'r') as zip_file:
+                    for file_name in zip_file.namelist():
+                        if file_name.endswith('.xml'):
+                            xml_content = zip_file.read(file_name).decode('utf-8')
+                            dmarc_contents.append(xml_content)
+                            
         except Exception as e:
-            context.logger.error(
-                f"Error processing email {email_id}: {e}",
-                stack_info=True
-            )
+            context.logger.error(f"Error processing attachment {attachment.filename}: {e}")
             continue
-
-async def analyze_dmarc_and_slack_result(dmarc_reports, context: AgentContext):
-    """
-    Analyzes DMARC reports for each email, summarizes the results, and sends summaries to Slack.
-    """
-    results = {}
-    for email_id, email_value in dmarc_reports.items():
-        contents = email_value['dmarc_contents']
-        email = email_value['email']
-        all_analyses = []
-        for xml_content in contents:
-            try:
-                analysis = await analyze_dmarc_report(xml_content)
-                all_analyses.append(analysis)
-            except Exception as e:
-                context.logger.error(f"Error analyzing DMARC report: {e}", stack_info=True)
-                continue
-        summary = await summarize_analysis(all_analyses, email)
+    
+    if not dmarc_contents:
+        context.logger.warning("No DMARC XML content found in email attachments")
+        return "❌ No DMARC reports found in email attachments"
+    
+    # Analyze DMARC reports
+    context.logger.info(f"Found {len(dmarc_contents)} DMARC reports to analyze")
+    all_analyses = []
+    
+    for xml_content in dmarc_contents:
+        try:
+            analysis = await analyze_dmarc_report(xml_content)
+            all_analyses.append(analysis)
+        except Exception as e:
+            context.logger.error(f"Error analyzing DMARC report: {e}", stack_info=True)
+            continue
+    
+    if not all_analyses:
+        return "❌ Unable to analyze DMARC reports - analysis failed"
+    
+    # Generate summary
+    summary = await summarize_analysis(all_analyses, {"subject": email.subject, "from": email.from_email, "date": email.date})
+    
+    # Send to Slack if configured
+    try:
         slack_to_dmarc_channel(summary)
-        results[email_id] = summary
-    return results
+    except Exception as e:
+        context.logger.error(f"Failed to send to Slack: {e}")
+    
+    return summary
 
 def slack_to_dmarc_channel(analysis):
     """
