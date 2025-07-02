@@ -1,15 +1,12 @@
 import os
+import zipfile
+import io
+from datetime import datetime, timezone
 from agentuity import AgentRequest, AgentResponse, AgentContext
 from agentuity.io.email import Email
 from openai import AsyncOpenAI
 from resources.templates import templates
-from utils.gmail import (
-	authenticate_gmail,
-	format_email_info,
-	get_dmarc_attachment_content,
-	get_unread_dmarc_emails,
-	mark_as_read
-)
+
 from utils.slack import send_message
 import gzip
 
@@ -24,7 +21,6 @@ async def run(request: AgentRequest, response: AgentResponse, context: AgentCont
     # Check for emails from request data
     email = await request.data.email()
     if email:
-        print(f"email: {email}")
         context.logger.info('email subject: %s', email.subject)
         analysis = await generate_dmarc_report_from_email(email, context)
         summary = f"DMARC analysis complete: {analysis}"
@@ -53,26 +49,29 @@ async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
             continue
             
         try:
+            context.logger.info(f"Attempting to read attachment data for: {attachment.filename}")
             data = await attachment.data()
             content = await data.binary()
             # Handle different attachment formats (XML, gzipped XML, zip files)
             if attachment.filename.endswith('.xml'):
                 xml_content = content.decode('utf-8')
                 dmarc_contents.append(xml_content)
+                context.logger.info(f"Processed XML attachment: {attachment.filename}")
             elif attachment.filename.endswith('.xml.gz'):
                 xml_content = gzip.decompress(content).decode('utf-8')
                 dmarc_contents.append(xml_content)
+                context.logger.info(f"Processed gzipped XML attachment: {attachment.filename}")
             elif attachment.filename.endswith('.zip'):
-                import zipfile
-                import io
                 with zipfile.ZipFile(io.BytesIO(content), 'r') as zip_file:
                     for file_name in zip_file.namelist():
                         if file_name.endswith('.xml'):
                             xml_content = zip_file.read(file_name).decode('utf-8')
                             dmarc_contents.append(xml_content)
-                            
+                            context.logger.info(f"Extracted XML file '{file_name}' from zip: {attachment.filename}")      
         except Exception as e:
-            context.logger.error(f"Error processing attachment {attachment.filename}: {e}")
+            error_message = str(e)
+            context.logger.error(f"Error processing attachment '{attachment.filename}': {error_message}")
+
             continue
     
     if not dmarc_contents:
@@ -95,7 +94,15 @@ async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
         return "❌ Unable to analyze DMARC reports - analysis failed"
     
     # Generate summary
-    summary = await summarize_analysis(all_analyses, {"subject": email.subject, "from": email.from_email, "date": email.date})
+    email_metadata = {"subject": email.subject, "from": email.from_email, "date": email.date}
+    summary = await summarize_analysis(all_analyses, email_metadata)
+    
+    # Store analysis results in key-value store
+    try:
+        await store_dmarc_analysis(context, email_metadata, all_analyses, summary)
+        context.logger.info("Successfully stored DMARC analysis results in key-value store")
+    except Exception as e:
+        context.logger.error(f"Failed to store analysis in key-value store: {e}")
     
     # Send to Slack if configured
     try:
@@ -104,6 +111,39 @@ async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
         context.logger.error(f"Failed to send to Slack: {e}")
     
     return summary
+
+async def store_dmarc_analysis(context: AgentContext, email_metadata: dict, analyses: list, summary: str):
+    """
+    Stores DMARC analysis results in the key-value store.
+    
+    Args:
+        context: The agent context providing access to storage
+        email_metadata: Metadata about the email (subject, from, date)
+        analyses: List of individual analysis results
+        summary: The final summarized analysis
+    """
+    # Generate a unique key based on email metadata and timestamp
+    storage_key = generate_storage_key(email_metadata)
+    
+    # Prepare data to store
+    storage_data = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "email_metadata": email_metadata,
+        "individual_analyses": analyses,
+        "summary": summary,
+        "report_count": len(analyses)
+    }
+    
+    # Store in key-value storage
+    await context.kv.set(KV_NAME, storage_key, storage_data)
+
+def generate_storage_key(email_metadata: dict) -> str:
+    """
+    Generates a simple timestamp-based storage key for the DMARC analysis.
+    """
+    # Simple timestamp with milliseconds for uniqueness
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]  # Include milliseconds
+    return f"dmarc_{timestamp}"
 
 def slack_to_dmarc_channel(analysis):
     """
