@@ -17,16 +17,19 @@ async def run(request: AgentRequest, response: AgentResponse, context: AgentCont
     """
     Entry point for processing DMARC reports and returning an analysis summary.
     """
-    
-    # Check for emails from request data
-    email = await request.data.email()
-    if email:
-        context.logger.info('email subject: %s', email.subject)
-        analysis = await generate_dmarc_report_from_email(email, context)
-        summary = f"DMARC analysis complete: {analysis}"
-        return response.json({"summary": summary})
-    else:
-        return response.text("No email found")
+    try:
+        # Check for emails from request data
+        email = await request.data.email()
+        if email:
+            context.logger.info('Processing email: %s', email.subject)
+            analysis = await generate_dmarc_report_from_email(email, context)
+            summary = f"DMARC analysis complete: {analysis}"
+            return response.json({"summary": summary})
+        else:
+            return response.text("No email found")
+    except Exception as e:
+        context.logger.error("Error processing email: %s", str(e))
+        return response.text(f"Failed to process email: {str(e)}")
 
 async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
     """
@@ -94,7 +97,11 @@ async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
         return "❌ Unable to analyze DMARC reports - analysis failed"
     
     # Generate summary
-    email_metadata = {"subject": email.subject, "from": email.from_email, "date": email.date}
+    email_metadata = {
+        "subject": email.subject, 
+        "from": email.from_email, 
+        "date": email.date.isoformat() if hasattr(email.date, 'isoformat') else str(email.date)
+    }
     summary = await summarize_analysis(all_analyses, email_metadata)
     
     # Store analysis results in key-value store
