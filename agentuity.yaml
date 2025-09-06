@@ -6,7 +6,7 @@
 # ------------------------------------------------
 
 # The version semver range required to run this project
-version: '>=0.0.105'
+version: '>=0.0.119'
 # The ID of the project which is automatically generated
 project_id: proj_7c47356558a8edac33d2fad402e98e3e
 # The name of the project which is editable
