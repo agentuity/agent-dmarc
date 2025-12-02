@@ -1,6 +1,7 @@
 import os
 import zipfile
 import io
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from agentuity import AgentRequest, AgentResponse, AgentContext
 from agentuity.io.email import Email
@@ -22,21 +23,72 @@ async def run(request: AgentRequest, response: AgentResponse, context: AgentCont
         email = await request.data.email()
         if email:
             context.logger.info('Processing email: %s', email.subject)
-            analysis = await generate_dmarc_report_from_email(email, context)
-            summary = f"DMARC analysis complete: {analysis}"
-            return response.json({"summary": summary})
+            analysis, slack_delivered = await generate_dmarc_report_from_email(email, context)
+            return response.json({
+                "summary": analysis,
+                "slack_delivered": slack_delivered
+            })
         else:
             return response.text("No email found")
     except Exception as e:
         context.logger.error("Error processing email: %s", str(e))
         return response.text(f"Failed to process email: {str(e)}")
 
+async def send_debug_email(context: AgentContext, email: Email):
+    """
+    Forwards DMARC email to srith@agentuity.com for debugging purposes.
+
+    Args:
+        context: The agent context providing access to I/O operations
+        email: The original DMARC email to forward
+    """
+    try:
+        # Build attachment list info for the body
+        attachment_info = "\n".join([
+            f"  - {att.filename} ({att.content_type})"
+            for att in email.attachments
+        ]) if email.attachments else "  No attachments"
+
+        # Send the debug email with original attachments
+        await context.io.email().send(
+            to="srith@agentuity.com",
+            subject=f"[DEBUG DMARC] {email.subject}",
+            body=f"""DMARC Debug Forwarding
+
+Original Email Details:
+- From: {email.from_email}
+- Subject: {email.subject}
+- Date: {email.date}
+- Number of Attachments: {len(email.attachments)}
+
+Attachments:
+{attachment_info}
+
+Original Body:
+{email.body if hasattr(email, 'body') else 'No body available'}
+
+---
+This email and its attachments are being forwarded for debugging purposes.
+            """,
+            attachments=email.attachments
+        )
+        context.logger.info("Debug email successfully forwarded to srith@agentuity.com")
+    except Exception as e:
+        context.logger.error(f"Failed to forward debug email: {e}")
+        raise
+
 async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
     """
     Processes an email and returns a summary of the DMARC report.
     """
     context.logger.info(f"Processing email with {len(email.attachments)} attachments")
-    
+
+    # Forward email to debug address for monitoring
+    try:
+        await send_debug_email(context, email)
+    except Exception as e:
+        context.logger.warning(f"Could not send debug email: {e}")
+
     dmarc_contents = []
     
     # Extract DMARC XML content from attachments
@@ -79,7 +131,7 @@ async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
     
     if not dmarc_contents:
         context.logger.warning("No DMARC XML content found in email attachments")
-        return "❌ No DMARC reports found in email attachments"
+        return "❌ No DMARC reports found in email attachments", False
     
     # Analyze DMARC reports
     context.logger.info(f"Found {len(dmarc_contents)} DMARC reports to analyze")
@@ -94,7 +146,7 @@ async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
             continue
     
     if not all_analyses:
-        return "❌ Unable to analyze DMARC reports - analysis failed"
+        return "❌ Unable to analyze DMARC reports - analysis failed", False
     
     # Generate summary
     email_metadata = {
@@ -106,31 +158,45 @@ async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
     
     # Store analysis results in key-value store
     try:
-        await store_dmarc_analysis(context, email_metadata, all_analyses, summary)
+        await store_dmarc_analysis(context, email_metadata, dmarc_contents, all_analyses, summary)
         context.logger.info("Successfully stored DMARC analysis results in key-value store")
     except Exception as e:
         context.logger.error(f"Failed to store analysis in key-value store: {e}")
     
     # Send to Slack if configured
+    slack_success = False
     try:
         slack_to_dmarc_channel(summary)
+        slack_success = True
+        context.logger.info("Successfully sent DMARC analysis to Slack")
     except Exception as e:
         context.logger.error(f"Failed to send to Slack: {e}")
-    
-    return summary
 
-async def store_dmarc_analysis(context: AgentContext, email_metadata: dict, analyses: list, summary: str):
+    return summary, slack_success
+
+async def store_dmarc_analysis(context: AgentContext, email_metadata: dict, dmarc_contents: list, analyses: list, summary: str):
     """
     Stores DMARC analysis results in the key-value store.
-    
+
     Args:
         context: The agent context providing access to storage
         email_metadata: Metadata about the email (subject, from, date)
+        dmarc_contents: List of DMARC XML content strings
         analyses: List of individual analysis results
         summary: The final summarized analysis
     """
-    # Generate a unique key based on email metadata and timestamp
-    storage_key = generate_storage_key(email_metadata)
+    # Extract report metadata from first DMARC XML for storage key
+    report_metadata = None
+    if dmarc_contents:
+        for xml_content in dmarc_contents:
+            report_metadata = extract_report_metadata(xml_content)
+            if report_metadata and report_metadata.get('report_id'):
+                # Found valid metadata, use it
+                context.logger.info(f"Using report_id for storage key: {report_metadata.get('report_id')}")
+                break
+
+    # Generate storage key using report metadata (or fallback to timestamp)
+    storage_key = generate_storage_key(report_metadata, email_metadata)
     
     # Prepare data to store
     storage_data = {
@@ -144,12 +210,76 @@ async def store_dmarc_analysis(context: AgentContext, email_metadata: dict, anal
     # Store in key-value storage
     await context.kv.set(KV_NAME, storage_key, storage_data)
 
-def generate_storage_key(email_metadata: dict) -> str:
+def extract_report_metadata(xml_content: str) -> dict:
     """
-    Generates a simple timestamp-based storage key for the DMARC analysis.
+    Extracts key metadata from DMARC XML report for storage key generation.
+
+    Args:
+        xml_content: The DMARC XML report content as a string.
+
+    Returns:
+        Dictionary with report_id, org_name, domain, and date_begin, or None if parsing fails.
     """
-    # Simple timestamp with milliseconds for uniqueness
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]  # Include milliseconds
+    try:
+        root = ET.fromstring(xml_content)
+        metadata = root.find('report_metadata')
+        policy = root.find('policy_published')
+
+        if metadata is None:
+            return None
+
+        result = {}
+
+        # Extract report ID (most important for uniqueness)
+        report_id_elem = metadata.find('report_id')
+        result['report_id'] = report_id_elem.text if report_id_elem is not None else None
+
+        # Extract organization name
+        org_name_elem = metadata.find('org_name')
+        result['org_name'] = org_name_elem.text if org_name_elem is not None else None
+
+        # Extract domain from policy
+        if policy is not None:
+            domain_elem = policy.find('domain')
+            result['domain'] = domain_elem.text if domain_elem is not None else None
+        else:
+            result['domain'] = None
+
+        # Extract date range start
+        date_range = metadata.find('date_range')
+        if date_range is not None:
+            begin_elem = date_range.find('begin')
+            result['date_begin'] = begin_elem.text if begin_elem is not None else None
+        else:
+            result['date_begin'] = None
+
+        return result
+    except Exception as e:
+        # XML parsing failed, return None
+        return None
+
+def generate_storage_key(report_metadata: dict = None, email_metadata: dict = None) -> str:
+    """
+    Generates a unique storage key for DMARC analysis, preferring report_id from XML.
+
+    Args:
+        report_metadata: Metadata extracted from DMARC XML (report_id, org_name, domain).
+        email_metadata: Email metadata as fallback (subject, from, date).
+
+    Returns:
+        Unique storage key string.
+    """
+    # Ideal: use report_id from DMARC XML (guaranteed unique per sender)
+    if report_metadata and report_metadata.get('report_id'):
+        report_id = report_metadata['report_id']
+        domain = report_metadata.get('domain', 'unknown')
+        org = report_metadata.get('org_name', 'unknown')
+        # Sanitize org name for use in key
+        org_sanitized = org.replace('.', '_').replace('/', '_').replace(' ', '_')
+        return f"{domain}_{org_sanitized}_{report_id}"
+
+    # Fallback: timestamp-based key
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]
     return f"dmarc_{timestamp}"
 
 def slack_to_dmarc_channel(analysis):
@@ -177,7 +307,7 @@ async def analyze_dmarc_report(dmarc_report):
     template = templates["analyze-dmarc"]
     compiled_prompt = template.substitute(xml=dmarc_report)
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4.1",
         messages=[{"role": "user", "content": compiled_prompt}]
     )
     return response.choices[0].message.content
@@ -199,7 +329,7 @@ async def summarize_analysis(results, email):
     template = templates["summarize-analysis"]
     compiled_prompt = template.substitute(analysis=results, email=email)
     response = await client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4.1",
         messages=[
             {"role": "user", "content": compiled_prompt}
         ]
