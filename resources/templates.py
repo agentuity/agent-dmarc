@@ -67,7 +67,7 @@ In the summary, please include the metadata of the email in a nice format.
 
 The summary should be in the following format:
 # Start of summary
-[A short funny greeting about a new DMARC report was sent to you]
+[A brief, professional notification that a new DMARC report has been received and analyzed]
 
 Subject: ...Subject of the email...
 Date: ...Date of the email...

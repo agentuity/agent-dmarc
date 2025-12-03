@@ -1,18 +1,21 @@
 import os
 import zipfile
 import io
-import xml.etree.ElementTree as ET
+import hashlib
+import defusedxml.ElementTree as ET
 from datetime import datetime, timezone
 from agentuity import AgentRequest, AgentResponse, AgentContext
 from agentuity.io.email import Email
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError, APIError, APITimeoutError
 from resources.templates import templates
+from config import config
 
 from utils.slack import send_message
+from utils.retry import async_retry
+from utils.validators import validate_attachment_size, validate_xml_structure, ValidationError
 import gzip
 
 client = AsyncOpenAI()
-KV_NAME = "dmarc-reports"
 
 async def run(request: AgentRequest, response: AgentResponse, context: AgentContext):
     """
@@ -107,26 +110,63 @@ async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
             context.logger.info(f"Attempting to read attachment data for: {attachment.filename}")
             data = await attachment.data()
             content = await data.binary()
+
+            # Validate attachment size
+            try:
+                validate_attachment_size(len(content), attachment.filename)
+            except ValidationError as e:
+                context.logger.warning(f"Skipping attachment due to validation error: {e}")
+                continue
+
             # Handle different attachment formats (XML, gzipped XML, zip files)
             if attachment.filename.endswith('.xml'):
                 xml_content = content.decode('utf-8')
+
+                # Validate XML structure
+                try:
+                    validate_xml_structure(xml_content)
+                except ValidationError as e:
+                    context.logger.warning(f"Skipping '{attachment.filename}': {e}")
+                    continue
+
                 dmarc_contents.append(xml_content)
                 context.logger.info(f"Processed XML attachment: {attachment.filename}")
+
             elif attachment.filename.endswith('.xml.gz'):
                 xml_content = gzip.decompress(content).decode('utf-8')
+
+                # Validate XML structure
+                try:
+                    validate_xml_structure(xml_content)
+                except ValidationError as e:
+                    context.logger.warning(f"Skipping '{attachment.filename}': {e}")
+                    continue
+
                 dmarc_contents.append(xml_content)
                 context.logger.info(f"Processed gzipped XML attachment: {attachment.filename}")
+
             elif attachment.filename.endswith('.zip'):
                 with zipfile.ZipFile(io.BytesIO(content), 'r') as zip_file:
                     for file_name in zip_file.namelist():
                         if file_name.endswith('.xml'):
                             xml_content = zip_file.read(file_name).decode('utf-8')
+
+                            # Validate XML structure
+                            try:
+                                validate_xml_structure(xml_content)
+                            except ValidationError as e:
+                                context.logger.warning(f"Skipping '{file_name}' from zip: {e}")
+                                continue
+
                             dmarc_contents.append(xml_content)
-                            context.logger.info(f"Extracted XML file '{file_name}' from zip: {attachment.filename}")      
+                            context.logger.info(f"Extracted XML file '{file_name}' from zip: {attachment.filename}")
+
+        except ValidationError as e:
+            context.logger.warning(f"Validation failed for '{attachment.filename}': {e}")
+            continue
         except Exception as e:
             error_message = str(e)
             context.logger.error(f"Error processing attachment '{attachment.filename}': {error_message}")
-
             continue
     
     if not dmarc_contents:
@@ -208,7 +248,7 @@ async def store_dmarc_analysis(context: AgentContext, email_metadata: dict, dmar
     }
     
     # Store in key-value storage
-    await context.kv.set(KV_NAME, storage_key, storage_data)
+    await context.kv.set(config.KV_STORE_NAME, storage_key, storage_data)
 
 def extract_report_metadata(xml_content: str) -> dict:
     """
@@ -261,6 +301,7 @@ def extract_report_metadata(xml_content: str) -> dict:
 def generate_storage_key(report_metadata: dict = None, email_metadata: dict = None) -> str:
     """
     Generates a unique storage key for DMARC analysis, preferring report_id from XML.
+    Fallback uses timestamp + hash of email metadata for uniqueness.
 
     Args:
         report_metadata: Metadata extracted from DMARC XML (report_id, org_name, domain).
@@ -278,26 +319,35 @@ def generate_storage_key(report_metadata: dict = None, email_metadata: dict = No
         org_sanitized = org.replace('.', '_').replace('/', '_').replace(' ', '_')
         return f"{domain}_{org_sanitized}_{report_id}"
 
-    # Fallback: timestamp-based key
+    # Fallback: timestamp + email hash for uniqueness
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]
+    if email_metadata:
+        email_hash = hashlib.md5(
+            f"{email_metadata.get('subject', '')}{email_metadata.get('from', '')}".encode()
+        ).hexdigest()[:8]
+        return f"dmarc_{timestamp}_{email_hash}"
     return f"dmarc_{timestamp}"
 
 def slack_to_dmarc_channel(analysis):
     """
     Sends a DMARC analysis message to the configured Slack channel.
-    
+
     Args:
         analysis: The analysis text to be posted to Slack.
     """
-    slack_channel = os.getenv("DMARC_CHANNEL_ID")
-    if not slack_channel:
-        raise RuntimeError("Environment variable DMARC_CHANNEL_ID is not set")
-    send_message(slack_channel, analysis)
+    if not config.DMARC_CHANNEL_ID:
+        raise RuntimeError("DMARC_CHANNEL_ID is not configured")
+    send_message(config.DMARC_CHANNEL_ID, analysis)
     
+@async_retry(
+    max_attempts=config.OPENAI_MAX_RETRIES,
+    exceptions=(RateLimitError, APIError, APITimeoutError)
+)
 async def analyze_dmarc_report(dmarc_report):
     """
     Analyzes a single DMARC report using an OpenAI GPT model.
-    
+    Includes automatic retry logic for rate limits, API errors, and timeouts.
+
     Args:
         dmarc_report: The DMARC XML report content to be analyzed.
 
@@ -307,19 +357,25 @@ async def analyze_dmarc_report(dmarc_report):
     template = templates["analyze-dmarc"]
     compiled_prompt = template.substitute(xml=dmarc_report)
     response = await client.chat.completions.create(
-        model="gpt-4.1",
-        messages=[{"role": "user", "content": compiled_prompt}]
+        model=config.OPENAI_MODEL,
+        messages=[{"role": "user", "content": compiled_prompt}],
+        timeout=config.OPENAI_TIMEOUT
     )
     return response.choices[0].message.content
 
+@async_retry(
+    max_attempts=config.OPENAI_MAX_RETRIES,
+    exceptions=(RateLimitError, APIError, APITimeoutError)
+)
 async def summarize_analysis(results, email):
     """
     Generates a concise summary of multiple DMARC analysis results using OpenAI GPT.
-    
+    Includes automatic retry logic for rate limits, API errors, and timeouts.
+
     Args:
         results: A list of individual DMARC analysis strings.
         email: Metadata or identifying information for the email being summarized.
-    
+
     Returns:
         A single summarized report string generated by the GPT model.
     """
@@ -329,9 +385,10 @@ async def summarize_analysis(results, email):
     template = templates["summarize-analysis"]
     compiled_prompt = template.substitute(analysis=results, email=email)
     response = await client.chat.completions.create(
-        model="gpt-4.1",
+        model=config.OPENAI_MODEL,
         messages=[
             {"role": "user", "content": compiled_prompt}
-        ]
+        ],
+        timeout=config.OPENAI_TIMEOUT
     )
     return response.choices[0].message.content

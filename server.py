@@ -1,7 +1,7 @@
-import logging
 import os
 import sys
 from agentuity import autostart
+from config import config
 
 if __name__ == "__main__":
     # Check if AGENTUITY_API_KEY is set
@@ -24,10 +24,12 @@ if __name__ == "__main__":
             "\033[31m[WARN] Recommend running `agentuity dev` to run your project locally instead of python script.\033[0m"
         )
 
-    # Setup logging after environment checks
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(levelname)-5.5s] %(message)s",
-    )
+    # Validate DMARC-specific configuration
+    config_errors = config.validate()
+    if config_errors:
+        print("\033[31m[ERROR] Configuration validation failed:\033[0m")
+        for error in config_errors:
+            print(f"  - {error}")
+        sys.exit(1)
 
     autostart()
