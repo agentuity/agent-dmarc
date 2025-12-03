@@ -37,60 +37,12 @@ async def run(request: AgentRequest, response: AgentResponse, context: AgentCont
         context.logger.error("Error processing email: %s", str(e))
         return response.text(f"Failed to process email: {str(e)}")
 
-async def send_debug_email(context: AgentContext, email: Email):
-    """
-    Forwards DMARC email to srith@agentuity.com for debugging purposes.
-
-    Args:
-        context: The agent context providing access to I/O operations
-        email: The original DMARC email to forward
-    """
-    try:
-        # Build attachment list info for the body
-        attachment_info = "\n".join([
-            f"  - {att.filename} ({att.content_type})"
-            for att in email.attachments
-        ]) if email.attachments else "  No attachments"
-
-        # Send the debug email with original attachments
-        await context.io.email().send(
-            to="srith@agentuity.com",
-            subject=f"[DEBUG DMARC] {email.subject}",
-            body=f"""DMARC Debug Forwarding
-
-Original Email Details:
-- From: {email.from_email}
-- Subject: {email.subject}
-- Date: {email.date}
-- Number of Attachments: {len(email.attachments)}
-
-Attachments:
-{attachment_info}
-
-Original Body:
-{email.body if hasattr(email, 'body') else 'No body available'}
-
----
-This email and its attachments are being forwarded for debugging purposes.
-            """,
-            attachments=email.attachments
-        )
-        context.logger.info("Debug email successfully forwarded to srith@agentuity.com")
-    except Exception as e:
-        context.logger.error(f"Failed to forward debug email: {e}")
-        raise
-
 async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
     """
     Processes an email and returns a summary of the DMARC report.
     """
     context.logger.info(f"Processing email with {len(email.attachments)} attachments")
-
-    # Forward email to debug address for monitoring
-    try:
-        await send_debug_email(context, email)
-    except Exception as e:
-        context.logger.warning(f"Could not send debug email: {e}")
+    context.logger.info(f"Email from: {email.from_email}, Subject: {email.subject}")
 
     dmarc_contents = []
     
