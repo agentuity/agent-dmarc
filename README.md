@@ -54,17 +54,18 @@ uv run --env-file .env server.py
 ├── agents/             # Agent definitions and implementations
 │   └── dmarc_email/    # DMARC email processing agent
 ├── utils/              # Utility modules
-│   ├── gmail.py        # Gmail API authentication and email processing
-│   └── slack.py        # Slack integration utilities
+│   ├── slack.py        # Slack integration utilities with retry logic
+│   ├── retry.py        # Async retry decorator with exponential backoff
+│   └── validators.py   # Input validation for attachments and XML
 ├── resources/          # Resource files and templates
 │   └── templates.py    # Email and notification templates
 ├── bin/                # Scripts and executables
 │   └── develop.sh      # Development setup script
 ├── .agentuity/         # Agentuity configuration files
+├── config.py           # Centralized configuration management
 ├── pyproject.toml      # Project dependencies and metadata
 ├── uv.lock             # UV lock file for reproducible builds
-├── server.py           # Server entry point
-├── main.py             # Main application entry point
+├── server.py           # Server entry point with config validation
 └── agentuity.yaml      # Agentuity project configuration
 ```
 
@@ -92,11 +93,14 @@ graph TD;
 
 #### Processing
 1. **Email Reception**: Receive emails via Agentuity Email IO
-2. **Attachment Processing**: Extract and decode attachment content
+2. **Attachment Validation**: Validate attachment size and format
 3. **Format Detection**: Identify DMARC files (XML, gzipped XML, ZIP)
-4. **Content Extraction**: Parse and extract DMARC XML reports from attachments
-5. **Analysis**: Process reports using OpenAI GPT-4o with specialized prompts
-6. **Summarization**: Generate concise summaries of analysis results
+4. **Content Extraction**: Parse and extract DMARC XML reports from attachments using secure defusedxml parser
+5. **XML Validation**: Verify XML structure and DMARC report format
+6. **Analysis**: Process reports using OpenAI (configurable model) with specialized prompts and automatic retry
+7. **Summarization**: Generate concise summaries of analysis results with retry logic
+8. **Storage**: Store analysis results in Agentuity KV store with unique keys
+9. **Slack Notification**: Send analysis to Slack channel with retry and exponential backoff
 
 #### Output
 - **JSON Response**: Summary of DMARC analysis returned by the agent
@@ -104,7 +108,30 @@ graph TD;
 
 ## 🔧 Configuration
 
+### Agentuity Configuration
+
 Your project configuration is stored in `agentuity.yaml`. This file defines your agents, development settings, and deployment configuration.
+
+### Environment Variables
+
+The agent supports the following environment variables for customization:
+
+#### Required Variables
+- **`SLACK_BOT_TOKEN`**: Your Slack bot token for sending notifications
+- **`DMARC_CHANNEL_ID`**: The Slack channel ID where DMARC reports will be posted
+- **`AGENTUITY_SDK_KEY`**: Your Agentuity SDK key (set automatically by Agentuity CLI)
+
+#### Optional Variables
+- **`OPENAI_MODEL`**: OpenAI model to use for analysis (default: `gpt-4.1`)
+- **`OPENAI_MAX_RETRIES`**: Maximum retry attempts for OpenAI API calls (default: `3`)
+- **`OPENAI_TIMEOUT`**: Timeout in seconds for OpenAI API calls (default: `60`)
+- **`SLACK_MAX_RETRIES`**: Maximum retry attempts for Slack API calls (default: `3`)
+- **`MAX_ATTACHMENT_SIZE_MB`**: Maximum attachment size in MB (default: `25`)
+- **`MAX_ATTACHMENTS_PER_EMAIL`**: Maximum number of attachments per email (default: `10`)
+
+### Configuration File
+
+Centralized configuration is managed in `config.py` with automatic validation on startup. The agent will fail fast if required configuration is missing.
 
 ## 🛠️ Advanced Usage
 
@@ -165,11 +192,55 @@ For comprehensive documentation on the Agentuity Python SDK, visit:
 
 ## 🆘 Troubleshooting
 
+### Common Issues
+
+#### Configuration Errors
+If you see configuration validation errors on startup:
+- Ensure `SLACK_BOT_TOKEN` is set in your environment
+- Ensure `DMARC_CHANNEL_ID` is set in your environment
+- Check that your `.env` file is properly formatted
+
+#### OpenAI API Errors
+The agent includes automatic retry logic for:
+- Rate limit errors (429)
+- API errors (500, 503)
+- Timeout errors
+
+If you still experience issues:
+- Check your OpenAI API key is valid
+- Verify you have sufficient API quota
+- Try increasing `OPENAI_TIMEOUT` for slower responses
+
+#### Slack Integration Issues
+The agent retries Slack API calls automatically for:
+- Rate limiting
+- Timeouts
+- Service unavailability
+
+If messages aren't appearing:
+- Verify your `SLACK_BOT_TOKEN` is valid
+- Ensure the bot has permission to post in `DMARC_CHANNEL_ID`
+- Check the bot is invited to the target channel
+
+#### Attachment Processing Errors
+- **Oversized attachments**: Default limit is 25MB, increase `MAX_ATTACHMENT_SIZE_MB` if needed
+- **Invalid XML**: The agent validates XML structure and skips malformed files
+- **Non-DMARC files**: Only files with DMARC-related names or extensions are processed
+
+### Getting Help
+
 If you encounter any issues:
 
 1. Check the [documentation](https://agentuity.dev/SDKs/python)
 2. Join our [Discord community](https://discord.com/invite/vtn3hgUfuc) for support
 3. Contact the Agentuity support team
+
+## 🔐 Security Features
+
+- **Secure XML Parsing**: Uses `defusedxml` to prevent XXE and other XML-based attacks
+- **Input Validation**: Validates attachment sizes and XML structure before processing
+- **Configuration Validation**: Validates required configuration on startup to fail fast
+- **Error Handling**: Comprehensive error handling with retry logic for transient failures
 
 ## 📝 License
 
