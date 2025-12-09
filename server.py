@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 from agentuity import autostart
@@ -23,7 +24,12 @@ if __name__ == "__main__":
         print(
             "\033[31m[WARN] Recommend running `agentuity dev` to run your project locally instead of python script.\033[0m"
         )
-
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(levelname)-5.5s] %(message)s",
+    )
+    
     # Validate DMARC-specific configuration
     config_errors = config.validate()
     if config_errors:

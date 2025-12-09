@@ -163,8 +163,9 @@ async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
             ip_results, excessive, failed_count = await filter_and_investigate_ips(
                 xml_content,
                 context,
-                max_ips=20,
-                timeout=60.0
+                max_ips=config.MAX_IPS_TO_INVESTIGATE,
+                timeout=config.IP_INVESTIGATION_TIMEOUT,
+                min_risk_score=config.MIN_RISK_SCORE,
             )
             all_ip_investigations.update(ip_results)
             excessive_failures_flag = excessive_failures_flag or excessive
@@ -190,8 +191,7 @@ async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
             # Use IP-enhanced analysis if we have IP investigation results
             if all_ip_investigations:
                 analysis = await analyze_dmarc_report_with_ip_context(
-                    xml_content,
-                    ip_context
+                    xml_content, ip_context
                 )
             else:
                 # Fallback to regular analysis
@@ -220,7 +220,7 @@ async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
             all_analyses,
             email_metadata,
             excessive_failures_flag,
-            total_failed_ips_count
+            total_failed_ips_count,
         )
     else:
         summary = await summarize_analysis(all_analyses, email_metadata)
@@ -231,7 +231,7 @@ async def generate_dmarc_report_from_email(email: Email, context: AgentContext):
             "🚨 ⚠️  **ALERT: UNUSUALLY HIGH FAILURE RATE** ⚠️  🚨\n\n"
             f"This DMARC report contains {total_failed_ips_count} failed IP addresses, "
             f"which is significantly higher than normal.\n"
-            f"Only the top 20 highest-risk IPs were investigated.\n"
+            f"Only the top {config.MAX_IPS_TO_INVESTIGATE} highest-risk IPs were investigated.\n"
             f"This may indicate a widespread spoofing campaign or major misconfiguration.\n\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         )
@@ -479,7 +479,9 @@ def format_ip_investigations_for_prompt(ip_investigations: dict) -> str:
             formatted_lines.append(f"Error: {result.error}")
         else:
             # Include key parts of the full analysis
-            formatted_lines.append(f"\nDetailed Analysis:\n{result.full_analysis[:500]}...")
+            formatted_lines.append(
+                f"\nDetailed Analysis:\n{result.full_analysis[:500]}..."
+            )
 
         formatted_lines.append("")  # Blank line between IPs
 
@@ -505,7 +507,9 @@ async def analyze_dmarc_report_with_ip_context(dmarc_report: str, ip_context: st
         A string containing the GPT-generated analysis with IP context.
     """
     template = templates["analyze-dmarc-with-ip-context"]
-    compiled_prompt = template.substitute(xml=dmarc_report, ip_investigations=ip_context)
+    compiled_prompt = template.substitute(
+        xml=dmarc_report, ip_investigations=ip_context
+    )
     response = await client.chat.completions.create(
         model=config.OPENAI_MODEL,
         messages=[{"role": "user", "content": compiled_prompt}],
@@ -519,10 +523,7 @@ async def analyze_dmarc_report_with_ip_context(dmarc_report: str, ip_context: st
     exceptions=(RateLimitError, APIError, APITimeoutError),
 )
 async def summarize_analysis_with_ip(
-    results: list,
-    email: dict,
-    excessive_failures: bool,
-    total_failed_ips: int
+    results: list, email: dict, excessive_failures: bool, total_failed_ips: int
 ):
     """
     Generates a concise summary of DMARC analysis with IP investigation context.

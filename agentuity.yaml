@@ -62,3 +62,6 @@ agents:
     name: dmarc_email
     # The description of the Agent which is editable
     description: This agent processes DMARC email reports and extracts actionable insights.
+  - id: agent_5979395bb08e012d576d2c502980d907
+    name: ip-analyzer
+    description: Agent that can analyze IP and dig in for suspicious activity

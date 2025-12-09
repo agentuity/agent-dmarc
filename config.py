@@ -18,6 +18,11 @@ class Config:
     MAX_ATTACHMENT_SIZE_MB: int = int(os.getenv("MAX_ATTACHMENT_SIZE_MB", "25"))
     MAX_ATTACHMENTS_PER_EMAIL: int = int(os.getenv("MAX_ATTACHMENTS_PER_EMAIL", "10"))
 
+    # IP Investigation Configuration
+    MAX_IPS_TO_INVESTIGATE: int = int(os.getenv("MAX_IPS_TO_INVESTIGATE", "20"))
+    IP_INVESTIGATION_TIMEOUT: float = float(os.getenv("IP_INVESTIGATION_TIMEOUT", "60.0"))
+    MIN_RISK_SCORE: int = int(os.getenv("MIN_RISK_SCORE", "40"))
+
     # Storage
     KV_STORE_NAME: str = "dmarc-reports"
 
